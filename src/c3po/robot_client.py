@@ -17,7 +17,6 @@ Usage::
 
 from __future__ import annotations
 
-import json
 import threading
 import time
 from typing import Any
@@ -28,11 +27,11 @@ import numpy as np
 # rclpy imports — provided by the system ROS 2 installation, not by pip
 # ---------------------------------------------------------------------------
 import rclpy
+from c3po_msgs.msg import Action
+from c3po_msgs.srv import Describe
 from rclpy.executors import SingleThreadedExecutor
 from rclpy.node import Node
 from sensor_msgs.msg import JointState
-from std_msgs.msg import Float64MultiArray
-from std_srvs.srv import Trigger
 
 from c3po.exceptions import RobotDisconnectedError, RobotNotFoundError
 
@@ -160,14 +159,14 @@ class RobotClient:
 
         # -- discovery (synchronous, before the background executor starts) --------
         try:
-            cli = node.create_client(Trigger, "/describe")
+            cli = node.create_client(Describe, "/describe")
             if not cli.wait_for_service(timeout_sec=_DISCOVERY_TIMEOUT):
                 raise RobotNotFoundError(
                     f"No /describe service found within {_DISCOVERY_TIMEOUT} s. "
                     "Is the Ethernet cable connected?"
                 )
 
-            req = Trigger.Request()
+            req = Describe.Request()
             future = cli.call_async(req)
             rclpy.spin_until_future_complete(
                 node, future, timeout_sec=_DISCOVERY_TIMEOUT
@@ -175,13 +174,18 @@ class RobotClient:
             if not future.done() or future.result() is None:
                 raise RobotNotFoundError("Failed to call /describe service.")
 
-            response: Trigger.Response = future.result()
-            if not response.success:
-                raise RobotNotFoundError(
-                    f"/describe reported failure: {response.message}"
-                )
-
-            self._manifest: dict[str, Any] = json.loads(response.message)
+            response: Describe.Response = future.result()
+            self._manifest: dict[str, Any] = {
+                "robot_model": response.robot_model,
+                "joint_count": response.joint_count,
+                "control_rate": response.control_rate,
+                "camera_names": list(response.camera_names),
+                "command_mode": response.command_mode,
+                "joint_names": list(response.joint_names),
+            }
+        except RobotNotFoundError:
+            _shutdown_node()
+            raise
         except Exception:
             _shutdown_node()
             raise
@@ -211,7 +215,7 @@ class RobotClient:
 
         # -- command publisher ----------------------------------------------------
         self._cmd_pub = node.create_publisher(
-            Float64MultiArray,
+            Action,
             f"/commands/{self._manifest['command_mode']}",
             10,
         )
@@ -269,7 +273,9 @@ class RobotClient:
                 f"Got keys: {list(action.keys())}"
             )
 
-        msg = Float64MultiArray()
+        msg = Action()
+        msg.mode = mode
+        msg.joint_names = self._manifest.get("joint_names", [])
         msg.data = action[mode].astype(np.float64).ravel().tolist()
         self._cmd_pub.publish(msg)
 
