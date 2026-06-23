@@ -128,6 +128,7 @@ class _ObservationBuffer:
                     self._received.clear()
                     return result
                 if timeout is not None:
+                    assert deadline is not None  # guaranteed by assignment above
                     remaining = deadline - time.monotonic()
                     if remaining <= 0:
                         raise RobotDisconnectedError(
