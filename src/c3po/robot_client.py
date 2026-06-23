@@ -18,7 +18,6 @@ Usage::
 from __future__ import annotations
 
 import threading
-import time
 from typing import Any
 
 import numpy as np
@@ -33,6 +32,7 @@ from rclpy.executors import SingleThreadedExecutor
 from rclpy.node import Node
 from sensor_msgs.msg import JointState
 
+from c3po._buffer import _ObservationBuffer
 from c3po.exceptions import RobotDisconnectedError, RobotNotFoundError
 
 # ---------------------------------------------------------------------------
@@ -86,64 +86,11 @@ def _shutdown_node() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Internal: observation buffer
-# ---------------------------------------------------------------------------
-
-
-class _ObservationBuffer:
-    """Thread-safe buffer that aligns incoming ROS 2 observations.
-
-    Subscription callbacks (running in the executor thread) push data into
-    this buffer.  The user-facing ``get_observation()`` blocks until every
-    expected topic has delivered at least one new value since the last call.
-    """
-
-    def __init__(self) -> None:
-        self._condition = threading.Condition()
-        self._expected: set[str] = set()
-        self._latest: dict[str, np.ndarray] = {}
-        self._received: set[str] = set()
-
-    def configure(self, topic_keys: list[str]) -> None:
-        """Set the complete set of keys that must arrive each cycle."""
-        with self._condition:
-            self._expected = set(topic_keys)
-
-    def update(self, key: str, value: np.ndarray) -> None:
-        """Push a single observation value (called from a subscriber)."""
-        with self._condition:
-            self._latest[key] = value
-            self._received.add(key)
-            self._condition.notify_all()
-
-    def get(self, timeout: float | None = None) -> dict[str, np.ndarray]:
-        """Block until every expected key has new data, then return a snapshot."""
-        deadline = time.monotonic() + timeout if timeout is not None else None
-        with self._condition:
-            while True:
-                missing = self._expected - self._received
-                if not missing:
-                    result = dict(self._latest)
-                    self._received.clear()
-                    return result
-                if timeout is not None:
-                    assert deadline is not None  # guaranteed by assignment above
-                    remaining = deadline - time.monotonic()
-                    if remaining <= 0:
-                        raise RobotDisconnectedError(
-                            f"Timeout waiting for topics: {missing}"
-                        )
-                    self._condition.wait(remaining)
-                else:
-                    self._condition.wait()
-
-
-# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
 _DISCOVERY_TIMEOUT = 10.0  # seconds
-_OBS_TIMEOUT = 5.0  # seconds (5× the expected 1 Hz period)
+_OBS_TIMEOUT = 5.0  # seconds (5× the expected period)
 
 
 class RobotClient:
