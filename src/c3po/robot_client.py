@@ -103,6 +103,7 @@ class RobotClient:
     def __init__(self, station_name: str | None = None) -> None:
         # -- create (or reuse) the singleton node ---------------------------------
         node = _ensure_node()
+        self._closed = False  # set early so __del__ is safe even on failure
 
         # -- discovery (synchronous, before the background executor starts) --------
         try:
@@ -166,8 +167,6 @@ class RobotClient:
             f"/commands/{self._manifest['command_mode']}",
             10,
         )
-
-        self._closed = False
 
     # ------------------------------------------------------------------
     # Properties
