@@ -100,14 +100,17 @@ class RobotClient:
     a minimal MDP‑inspired API.
     """
 
-    def __init__(self, station_name: str | None = None) -> None:
+    def __init__(
+        self, station_name: str | None = None, *, namespace: str | None = None
+    ) -> None:
         # -- create (or reuse) the singleton node ---------------------------------
         node = _ensure_node()
         self._closed = False  # set early so __del__ is safe even on failure
 
         # -- discovery (synchronous, before the background executor starts) --------
+        ns = f"/{namespace}" if namespace else ""
         try:
-            cli = node.create_client(Describe, "/describe")
+            cli = node.create_client(Describe, f"{ns}/describe")
             if not cli.wait_for_service(timeout_sec=_DISCOVERY_TIMEOUT):
                 raise RobotNotFoundError(
                     f"No /describe service found within {_DISCOVERY_TIMEOUT} s. "
@@ -149,7 +152,7 @@ class RobotClient:
         # Joint state (always present)
         self._joint_sub = node.create_subscription(
             JointState,
-            "/observations/joint_position",
+            f"{ns}/observations/joint_position",
             self._on_joint_state,
             10,
         )
@@ -164,7 +167,7 @@ class RobotClient:
         # -- command publisher ----------------------------------------------------
         self._cmd_pub = node.create_publisher(
             Action,
-            f"/commands/{self._manifest['command_mode']}",
+            f"{ns}/commands/{self._manifest['command_mode']}",
             10,
         )
 
@@ -187,6 +190,10 @@ class RobotClient:
     @property
     def camera_names(self) -> list[str]:
         return self._manifest.get("camera_names", [])
+
+    @property
+    def joint_names(self) -> list[str]:
+        return self._manifest.get("joint_names", [])
 
     # ------------------------------------------------------------------
     # Observation / action
