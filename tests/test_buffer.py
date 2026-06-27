@@ -1,112 +1,81 @@
-"""Unit tests for the _ObservationBuffer synchronisation primitive."""
+"""Unit tests for the ObservationBuffer."""
 
 from __future__ import annotations
-
-import threading
-import time
 
 import numpy as np
 import pytest
 
-from c3po._buffer import _ObservationBuffer
-from c3po.exceptions import RobotDisconnectedError
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
-def _feed(buffer: _ObservationBuffer, keys: list[str], delay: float = 0.0) -> None:
-    """Push one value per key into *buffer*, optionally after *delay* seconds."""
-    if delay:
-        time.sleep(delay)
-    for k in keys:
-        buffer.update(k, np.array([1.0]))
-
-
-# ---------------------------------------------------------------------------
-# Tests
-# ---------------------------------------------------------------------------
+from c3po._buffer import ObservationBuffer
 
 
 class TestObservationBuffer:
-    """Unit tests for _ObservationBuffer."""
+    """Tests for the non-blocking ObservationBuffer."""
 
-    # -- blocks until all topics arrive -----------------------------------
+    def test_get_returns_empty_initially(self) -> None:
+        buf = ObservationBuffer()
+        assert buf.get() == {}
 
-    def test_blocks_until_all_topics(self) -> None:
-        """get() does not return before every configured key has data."""
-        buf = _ObservationBuffer()
-        buf.configure(["joint_position", "joint_velocity", "front_rgb"])
-
+    def test_get_returns_latest_values(self) -> None:
+        buf = ObservationBuffer()
         buf.update("joint_position", np.array([0.5]))
-        buf.update("joint_velocity", np.array([0.1]))
+        buf.update("joint_velocity", np.array([0.01]))
+        buf.update("joint_position", np.array([0.6]))  # overwrite
 
-        # Feed the missing key from another thread after a short delay.
-        def _deliver_last() -> None:
-            time.sleep(0.1)
-            buf.update("front_rgb", np.zeros((480, 640, 3), dtype=np.uint8))
+        obs = buf.get()
+        assert obs["joint_position"][0] == pytest.approx(0.6)
+        assert obs["joint_velocity"][0] == pytest.approx(0.01)
 
-        t = threading.Thread(target=_deliver_last)
+    def test_get_does_not_block(self) -> None:
+        buf = ObservationBuffer()
+        # Should return immediately, even with no data.
+        obs = buf.get()
+        assert obs == {}
+
+    def test_get_returns_snapshot_not_live_dict(self) -> None:
+        buf = ObservationBuffer()
+        buf.update("a", np.array([1.0]))
+        obs1 = buf.get()
+        buf.update("a", np.array([2.0]))
+        # obs1 should still have the old value.
+        assert obs1["a"][0] == pytest.approx(1.0)
+
+    def test_wait_until_any_returns_immediately_if_data_present(self) -> None:
+        buf = ObservationBuffer()
+        buf.update("a", np.array([1.0]))
+        assert buf.wait_until_any(timeout=0.5) is True
+
+    def test_wait_until_any_blocks_until_data(self) -> None:
+        import threading
+        import time
+
+        buf = ObservationBuffer()
+        result_container: list[bool] = []
+
+        def _waiter() -> None:
+            result_container.append(buf.wait_until_any(timeout=2.0))
+
+        t = threading.Thread(target=_waiter)
         t.start()
+        time.sleep(0.1)
+        buf.update("a", np.array([1.0]))
+        t.join(timeout=1.0)
 
-        obs = buf.get(timeout=1.0)
-        t.join()
+        assert result_container == [True]
 
-        assert set(obs.keys()) == {"joint_position", "joint_velocity", "front_rgb"}
+    def test_wait_until_any_times_out(self) -> None:
+        buf = ObservationBuffer()
+        assert buf.wait_until_any(timeout=0.05) is False
 
-    # -- returns a consistent snapshot ------------------------------------
+    def test_clear_removes_all_values(self) -> None:
+        buf = ObservationBuffer()
+        buf.update("a", np.array([1.0]))
+        buf.clear()
+        assert buf.get() == {}
 
-    def test_snapshot_contains_latest_values(self) -> None:
-        """get() returns the most recent value for every key."""
-        buf = _ObservationBuffer()
-        buf.configure(["joint_position", "joint_velocity"])
-
-        buf.update("joint_position", np.array([0.1]))
-        buf.update("joint_position", np.array([0.2]))  # overwrite
-        buf.update("joint_velocity", np.array([0.5]))
-
-        obs = buf.get(timeout=1.0)
-        assert obs["joint_position"][0] == pytest.approx(0.2)
-        assert obs["joint_velocity"][0] == pytest.approx(0.5)
-
-    # -- clears received state between calls ------------------------------
-
-    def test_clears_between_calls(self) -> None:
-        """After get() returns, the next get() blocks until fresh data."""
-        buf = _ObservationBuffer()
-        buf.configure(["joint_position"])
-
-        # First call: data is available, returns immediately.
-        buf.update("joint_position", np.array([1.0]))
-        obs1 = buf.get(timeout=0.5)
-        assert obs1["joint_position"][0] == 1.0
-
-        # Second call: no new data — must time out.
-        with pytest.raises(RobotDisconnectedError):
-            buf.get(timeout=0.1)
-
-    # -- timeout raises the right error -----------------------------------
-
-    def test_timeout_raises_robot_disconnected(self) -> None:
-        """A timed-out get() raises RobotDisconnectedError."""
-        buf = _ObservationBuffer()
-        buf.configure(["joint_position"])
-
-        # Never deliver data — timeout should fire.
-        with pytest.raises(RobotDisconnectedError, match="Timeout"):
-            buf.get(timeout=0.05)
-
-    # -- configure resets expected keys -----------------------------------
-
-    def test_configure_resets_keys(self) -> None:
-        """Calling configure() twice replaces the expected set."""
-        buf = _ObservationBuffer()
-        buf.configure(["joint_position"])
-        buf.update("joint_position", np.array([0.0]))
-        buf.get(timeout=0.5)  # clears
-
-        buf.configure(["front_rgb"])
-        buf.update("front_rgb", np.zeros((1, 1, 3), dtype=np.uint8))
-        obs = buf.get(timeout=0.5)
-        assert "front_rgb" in obs
+    def test_wait_until_any_clears_event_after_return(self) -> None:
+        buf = ObservationBuffer()
+        buf.update("a", np.array([1.0]))
+        # First wait succeeds.
+        assert buf.wait_until_any(timeout=0.1) is True
+        # Second wait should time out (no new data).
+        assert buf.wait_until_any(timeout=0.05) is False

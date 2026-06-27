@@ -1,84 +1,62 @@
-"""Thread-safe observation buffer with timestamp alignment.
+"""Thread-safe observation buffer.
 
-Used internally by :class:`RobotClient` to collect data from multiple
-ROS 2 subscription callbacks (running in the executor thread) and deliver
-a consistent snapshot to the user-facing ``get_observation()`` call.
+Used internally by :class:`Robot` to collect data from incoming
+WebSocket messages (delivered on the transport thread) and deliver
+the latest available snapshot to the user-facing ``step()`` call.
+
+Unlike the previous design, this buffer does NOT block waiting for
+new data on every topic.  It always returns the latest value available
+for each key, making it suitable for non‑blocking step() semantics.
 """
 
 from __future__ import annotations
 
 import threading
-import time
 
 import numpy as np
 
-from c3po.exceptions import RobotDisconnectedError
 
+class ObservationBuffer:
+    """Thread-safe latest-value buffer for observation data.
 
-class _ObservationBuffer:
-    """Thread-safe buffer that aligns incoming ROS 2 observations.
-
-    Subscription callbacks (running in the executor thread) push data into
-    this buffer.  The user-facing ``get_observation()`` blocks until every
-    expected topic has delivered at least one new value since the last call.
+    Values are updated by the transport thread (via ``update()``).
+    ``get()`` returns the latest snapshot without blocking.
     """
 
     def __init__(self) -> None:
-        self._condition = threading.Condition()
-        self._expected: set[str] = set()
+        self._lock = threading.Lock()
         self._latest: dict[str, np.ndarray] = {}
-        self._received: set[str] = set()
-
-    # ------------------------------------------------------------------
-    # Public API
-    # ------------------------------------------------------------------
-
-    def configure(self, topic_keys: list[str]) -> None:
-        """Set the complete set of keys that must arrive each cycle."""
-        with self._condition:
-            self._expected = set(topic_keys)
+        self._event = threading.Event()
 
     def update(self, key: str, value: np.ndarray) -> None:
-        """Push a single observation value (called from a subscriber)."""
-        with self._condition:
+        """Store the latest value for *key*."""
+        with self._lock:
             self._latest[key] = value
-            self._received.add(key)
-            self._condition.notify_all()
+        self._event.set()
 
-    def get(self, timeout: float | None = None) -> dict[str, np.ndarray]:
-        """Block until every expected key has new data, then return a snapshot.
+    def get(self) -> dict[str, np.ndarray]:
+        """Return a snapshot of the latest values for all keys.
 
-        Parameters
-        ----------
-        timeout:
-            Maximum time to wait in seconds.  If *None*, waits indefinitely.
-
-        Returns
-        -------
-        dict
-            Snapshot of the latest value for every configured key.
-
-        Raises
-        ------
-        RobotDisconnectedError
-            If *timeout* is not None and the deadline expires before all
-            keys have been received.
+        Does not block.  Returns an empty dict if no data has been
+        received yet.
         """
-        deadline = time.monotonic() + timeout if timeout is not None else None
-        with self._condition:
-            while True:
-                missing = self._expected - self._received
-                if not missing:
-                    result = dict(self._latest)
-                    self._received.clear()
-                    return result
-                if timeout is not None:
-                    assert deadline is not None  # guaranteed above
-                    remaining = deadline - time.monotonic()
-                    if remaining <= 0:
-                        raise RobotDisconnectedError(
-                            f"Timeout waiting for topics: {missing}"
-                        )
-                    self._condition.wait(remaining)
-                else:
-                    self._condition.wait()
+        with self._lock:
+            return dict(self._latest)
+
+    def wait_until_any(self, timeout: float | None = None) -> bool:
+        """Block until at least one observation key has been updated.
+
+        Returns ``True`` if data arrived, ``False`` on timeout.
+        Useful for the initial ``reset()`` call to ensure we have
+        at least one observation before returning.
+        """
+        result = self._event.wait(timeout=timeout)
+        if result:
+            self._event.clear()
+        return result
+
+    def clear(self) -> None:
+        """Clear all stored values."""
+        with self._lock:
+            self._latest.clear()
+        self._event.clear()
