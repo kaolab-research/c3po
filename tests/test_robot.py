@@ -7,7 +7,7 @@ import time
 import numpy as np
 import pytest
 
-from c3po import IncompatibleVersionError, Robot, RobotNotFoundError
+from c3po import Robot, RobotNotFoundError
 
 # The mock_server fixture is defined in conftest.py
 
