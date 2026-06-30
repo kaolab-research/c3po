@@ -16,13 +16,9 @@ Usage::
 
 __all__ = [
     "Robot",
-    "Recorder",
-    "ReplayClient",
     "RobotNotFoundError",
     "RobotDisconnectedError",
     "IncompatibleVersionError",
-    "to_lerobot_format",
-    "to_lerobot_action",
 ]
 
 
@@ -31,14 +27,6 @@ def __getattr__(name: str):
         from c3po.robot import Robot as _r
 
         return _r
-    if name == "Recorder":
-        from c3po._recorder import Recorder as _rec
-
-        return _rec
-    if name == "ReplayClient":
-        from c3po._recorder import ReplayClient as _replay
-
-        return _replay
     if name == "RobotNotFoundError":
         from c3po.exceptions import RobotNotFoundError as _rnf
 
@@ -51,12 +39,4 @@ def __getattr__(name: str):
         from c3po.exceptions import IncompatibleVersionError as _ive
 
         return _ive
-    if name == "to_lerobot_format":
-        from c3po._lerobot import to_lerobot_format as _tlf
-
-        return _tlf
-    if name == "to_lerobot_action":
-        from c3po._lerobot import to_lerobot_action as _tla
-
-        return _tla
     raise AttributeError(f"module 'c3po' has no attribute {name!r}")
