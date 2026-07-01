@@ -66,6 +66,9 @@ class Robot:
         r2d2 server IP address.  Defaults to ``10.42.0.1``.
     port:
         WebSocket port.  Defaults to ``9090``.
+    rate:
+        Desired control rate in Hz.  Defaults to 50.0.
+        r2d2 may cap this at the hardware's maximum safe rate.
     """
 
     def __init__(
@@ -73,9 +76,11 @@ class Robot:
         *,
         host: str = _DEFAULT_HOST,
         port: int = _DEFAULT_PORT,
+        rate: float = 50.0,
     ) -> None:
         self._closed = False
         self._recording = False
+        self._rate = float(rate)
 
         # -- connect transport --------------------------------------------------
         url = f"ws://{host}:{port}"
@@ -114,6 +119,11 @@ class Robot:
                 f"r2d2 reports API version {api_version}, but c3po requires version 1.x"
             )
 
+        # -- configure rate -------------------------------------------------------
+        from c3po._protocol import Configure
+
+        self._transport.send_json(Configure(rate=self._rate))
+
         # -- observation buffer --------------------------------------------------
         self._buffer = ObservationBuffer()
 
@@ -129,7 +139,12 @@ class Robot:
     @property
     def control_rate(self) -> float:
         """Station's native control rate in Hz."""
-        return self._manifest["control_rate"]
+        return self._manifest.get("control_rate", self._rate)
+
+    @property
+    def rate(self) -> float:
+        """Currently active control rate in Hz."""
+        return self._rate
 
     @property
     def arms(self) -> list[str]:

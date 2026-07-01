@@ -99,6 +99,14 @@ class ResetEpisode:
 
 
 @dataclass
+class Configure:
+    """Sent by c3po to request a control rate."""
+
+    rate: float
+    type: str = field(default="configure", init=False)
+
+
+@dataclass
 class StartRecording:
     """Sent by c3po to tell r2d2 to begin recording a dataset."""
 
@@ -128,6 +136,7 @@ _MESSAGE_REGISTRY: dict[str, type] = {
     "action": Action,
     "observation": Observation,
     "reset_episode": ResetEpisode,
+    "configure": Configure,
     "start_recording": StartRecording,
     "stop_recording": StopRecording,
     "cancel_episode": CancelEpisode,
