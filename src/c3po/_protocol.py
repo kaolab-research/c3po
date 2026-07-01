@@ -92,6 +92,13 @@ class Observation:
 
 
 @dataclass
+class ResetEpisode:
+    """Sent by c3po to mark the start of a new episode (for recording)."""
+
+    type: str = field(default="reset_episode", init=False)
+
+
+@dataclass
 class StartRecording:
     """Sent by c3po to tell r2d2 to begin recording a dataset."""
 
@@ -120,6 +127,7 @@ _MESSAGE_REGISTRY: dict[str, type] = {
     "describe_response": DescribeResponse,
     "action": Action,
     "observation": Observation,
+    "reset_episode": ResetEpisode,
     "start_recording": StartRecording,
     "stop_recording": StopRecording,
     "cancel_episode": CancelEpisode,

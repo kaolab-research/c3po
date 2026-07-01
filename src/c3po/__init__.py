@@ -19,6 +19,7 @@ __all__ = [
     "RobotNotFoundError",
     "RobotDisconnectedError",
     "IncompatibleVersionError",
+    "ProtocolError",
 ]
 
 
@@ -39,4 +40,8 @@ def __getattr__(name: str):
         from c3po.exceptions import IncompatibleVersionError as _ive
 
         return _ive
+    if name == "ProtocolError":
+        from c3po.exceptions import ProtocolError as _pe
+
+        return _pe
     raise AttributeError(f"module 'c3po' has no attribute {name!r}")

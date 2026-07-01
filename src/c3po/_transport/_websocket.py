@@ -1,59 +1,67 @@
-"""WebSocket transport using the rosbridge protocol.
+"""WebSocket transport using the N-Droids custom protocol.
 
-Communicates with r2d2's rosbridge_server over a single WebSocket connection.
-Implements the standard rosbridge JSON protocol for topic subscribe/publish
-and service calls.
+Communicates with r2d2 over a single WebSocket connection.
+Sends JSON text frames for control and receives both JSON text
+and binary JPEG frames from the server.
 """
 
 from __future__ import annotations
 
-import json
 import logging
+import queue
 import threading
-import uuid
-from typing import Any, Callable
+from typing import Any
 
 import websocket
-from c3po._transport._base import Transport
 
-from c3po.exceptions import RobotDisconnectedError
+from c3po._protocol import (
+    BinaryFrame,
+    decode_binary_frame,
+    decode_json_message,
+    encode_json_message,
+)
+from c3po._transport._base import Transport
+from c3po.exceptions import RobotDisconnectedError, RobotNotFoundError
 
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# Rosbridge protocol constants
-# ---------------------------------------------------------------------------
-
-_ROSBRIDGE_OP_SUBSCRIBE = "subscribe"
-_ROSBRIDGE_OP_UNSUBSCRIBE = "unsubscribe"
-_ROSBRIDGE_OP_PUBLISH = "publish"
-_ROSBRIDGE_OP_CALL_SERVICE = "call_service"
-_ROSBRIDGE_OP_SERVICE_RESPONSE = "service_response"
-
-
-# ---------------------------------------------------------------------------
-# WebSocket transport
-# ---------------------------------------------------------------------------
+_CONNECT_TIMEOUT = 10.0
+_RECV_POLL_INTERVAL = 0.1
 
 
 class WebSocketTransport(Transport):
-    """Transport that speaks the rosbridge WebSocket protocol."""
+    """Transport that speaks the N-Droids WebSocket protocol.
+
+    Parameters
+    ----------
+    url:
+        WebSocket server URL, e.g. ``"ws://10.42.0.1:9090"``.
+    """
 
     def __init__(self, url: str) -> None:
         self._url = url
         self._ws: websocket.WebSocketApp | None = None
         self._thread: threading.Thread | None = None
-        self._subscriptions: dict[str, Callable[[dict[str, Any]], None]] = {}
-        self._pending_services: dict[str, threading.Event] = {}
-        self._service_results: dict[str, dict[str, Any]] = {}
+        self._recv_queue: queue.Queue[Any] = queue.Queue()
         self._connected = threading.Event()
-        self._lock = threading.Lock()
+        self._error: Exception | None = None
 
     # ------------------------------------------------------------------
     # Transport interface
     # ------------------------------------------------------------------
 
+    @property
+    def is_connected(self) -> bool:
+        return self._connected.is_set()
+
     def connect(self) -> None:
+        """Open the WebSocket and block until the connection is established.
+
+        Raises
+        ------
+        RobotNotFoundError
+            If the connection cannot be established within the timeout.
+        """
         self._ws = websocket.WebSocketApp(
             self._url,
             on_open=self._on_open,
@@ -61,101 +69,71 @@ class WebSocketTransport(Transport):
             on_error=self._on_error,
             on_close=self._on_close,
         )
+
         self._thread = threading.Thread(
-            target=self._ws.run_forever, daemon=True, name="c3po-ws"
+            target=self._ws.run_forever,
+            daemon=True,
+            name="c3po-ws",
         )
         self._thread.start()
 
-        # Block until connected or timeout.
-        if not self._connected.wait(timeout=10.0):
-            raise RobotDisconnectedError(
-                f"Failed to connect to {self._url} within 10 s. "
-                "Is the Ethernet cable plugged in?"
+        if not self._connected.wait(timeout=_CONNECT_TIMEOUT):
+            self.close()
+            err = self._error
+            detail = f": {err}" if err else ""
+            raise RobotNotFoundError(
+                f"Could not connect to r2d2 at {self._url} within {_CONNECT_TIMEOUT} s."
+                f"{detail}"
             )
 
     def close(self) -> None:
+        """Close the WebSocket and join the receive thread."""
+        self._connected.clear()
         ws = self._ws
         if ws is not None:
-            ws.close()
+            try:
+                ws.close()
+            except Exception:
+                pass
             self._ws = None
-        self._thread = None
-        self._connected.clear()
+        # Put a sentinel to unblock any waiting recv() call.
+        try:
+            self._recv_queue.put_nowait(_ConnectionClosed())
+        except queue.Full:
+            pass
 
-    def call_service(
-        self, service: str, request: dict[str, Any] | None = None
-    ) -> dict[str, Any]:
-        if self._ws is None:
+    def send_json(self, msg: Any) -> None:
+        """Encode *msg* as a JSON text frame and send it."""
+        if self._ws is None or not self.is_connected:
             raise RobotDisconnectedError("Not connected.")
+        raw = encode_json_message(msg)
+        self._ws.send(raw)
 
-        service_id = f"call_service_{uuid.uuid4().hex}"
-        event = threading.Event()
-
-        with self._lock:
-            self._pending_services[service_id] = event
-
-        msg = {
-            "op": _ROSBRIDGE_OP_CALL_SERVICE,
-            "id": service_id,
-            "service": service,
-            "args": request or {},
-        }
-        self._ws.send(json.dumps(msg))
-
-        if not event.wait(timeout=10.0):
-            raise RobotDisconnectedError(
-                f"Service call {service} timed out after 10 s."
-            )
-
-        with self._lock:
-            result = self._service_results.pop(service_id, {})
-
-        if "values" not in result:
-            raise RobotDisconnectedError(f"Service call {service} returned no values.")
-
-        return result["values"]
-
-    def subscribe(
-        self, topic: str, msg_type: str, callback: Callable[[dict[str, Any]], None]
-    ) -> None:
-        with self._lock:
-            self._subscriptions[topic] = callback
-
-        if self._ws is None:
-            return
-
-        msg = {
-            "op": _ROSBRIDGE_OP_SUBSCRIBE,
-            "id": f"subscribe_{topic}",
-            "topic": topic,
-            "type": msg_type,
-        }
-        self._ws.send(json.dumps(msg))
-        logger.debug("Subscribed to %s (%s)", topic, msg_type)
-
-    def unsubscribe(self, topic: str) -> None:
-        with self._lock:
-            self._subscriptions.pop(topic, None)
-
-        if self._ws is None:
-            return
-
-        msg = {
-            "op": _ROSBRIDGE_OP_UNSUBSCRIBE,
-            "id": f"unsubscribe_{topic}",
-            "topic": topic,
-        }
-        self._ws.send(json.dumps(msg))
-
-    def publish(self, topic: str, msg_type: str, msg: dict[str, Any]) -> None:
-        if self._ws is None:
+    def send_binary(self, data: bytes) -> None:
+        """Send raw *data* as a WebSocket binary frame."""
+        if self._ws is None or not self.is_connected:
             raise RobotDisconnectedError("Not connected.")
+        self._ws.send(data, opcode=websocket.ABNF.OPCODE_BINARY)
 
-        payload = {
-            "op": _ROSBRIDGE_OP_PUBLISH,
-            "topic": topic,
-            "msg": msg,
-        }
-        self._ws.send(json.dumps(payload))
+    def recv(self, timeout: float | None = None) -> Any:
+        """Return the next message from the server.
+
+        Blocks until a message is available or *timeout* expires.
+
+        Raises
+        ------
+        RobotDisconnectedError
+            If the connection is lost or the timeout expires.
+        """
+        try:
+            msg = self._recv_queue.get(timeout=timeout)
+        except queue.Empty:
+            raise RobotDisconnectedError(f"No message received within {timeout} s.")
+
+        if isinstance(msg, _ConnectionClosed):
+            raise RobotDisconnectedError("Connection to r2d2 was closed.")
+
+        return msg
 
     # ------------------------------------------------------------------
     # WebSocket callbacks (run in ws thread)
@@ -164,48 +142,43 @@ class WebSocketTransport(Transport):
     def _on_open(self, ws: websocket.WebSocketApp) -> None:
         logger.debug("WebSocket connected to %s", self._url)
         self._connected.set()
+        self._error = None
 
-        # Re-subscribe to any topics registered before connect completed.
-        with self._lock:
-            for topic in list(self._subscriptions):
-                msg = {
-                    "op": _ROSBRIDGE_OP_SUBSCRIBE,
-                    "id": f"subscribe_{topic}",
-                    "topic": topic,
-                    "type": "",  # type was stored... skip for simplicity
-                }
-                ws.send(json.dumps(msg))
+    def _on_message(self, ws: websocket.WebSocketApp, raw: str | bytes) -> None:
+        """Called for both text and binary frames.
 
-    def _on_message(self, ws: websocket.WebSocketApp, raw: str) -> None:
+        *raw* is ``str`` for text frames and ``bytes`` for binary frames
+        (``websocket-client`` >= 1.4 dispatches both through ``on_message``).
+        """
         try:
-            data = json.loads(raw)
-        except json.JSONDecodeError:
-            logger.warning("Received invalid JSON from rosbridge")
-            return
-
-        op = data.get("op")
-
-        if op == _ROSBRIDGE_OP_PUBLISH:
-            topic = data.get("topic", "")
-            msg = data.get("msg", {})
-            with self._lock:
-                cb = self._subscriptions.get(topic)
-            if cb is not None:
-                cb(msg)
-
-        elif op == _ROSBRIDGE_OP_SERVICE_RESPONSE:
-            sid = data.get("id", "")
-            with self._lock:
-                self._service_results[sid] = data
-                event = self._pending_services.pop(sid, None)
-            if event is not None:
-                event.set()
+            if isinstance(raw, str):
+                msg = decode_json_message(raw)
+            else:
+                msg = decode_binary_frame(raw)
+            self._recv_queue.put(msg)
+        except Exception as exc:
+            logger.warning("Failed to decode incoming message: %s", exc)
 
     def _on_error(self, ws: websocket.WebSocketApp, error: Any) -> None:
         logger.error("WebSocket error: %s", error)
+        self._error = error if isinstance(error, Exception) else Exception(str(error))
 
     def _on_close(
         self, ws: websocket.WebSocketApp, close_status_code: Any, close_msg: Any
     ) -> None:
-        logger.warning("WebSocket closed: %s %s", close_status_code, close_msg)
+        logger.debug("WebSocket closed: %s %s", close_status_code, close_msg)
         self._connected.clear()
+        # Put a sentinel to unblock recv().
+        try:
+            self._recv_queue.put_nowait(_ConnectionClosed())
+        except queue.Full:
+            pass
+
+
+# ---------------------------------------------------------------------------
+# Internal sentinel
+# ---------------------------------------------------------------------------
+
+
+class _ConnectionClosed:
+    """Sentinel placed on the recv queue when the connection closes."""

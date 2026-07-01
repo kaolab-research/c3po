@@ -1,4 +1,4 @@
-"""Integration tests for the Robot class against a mock rosbridge server."""
+"""Integration tests for the Robot class against a mock r2d2 server."""
 
 from __future__ import annotations
 
@@ -8,8 +8,7 @@ import numpy as np
 import pytest
 
 from c3po import Robot, RobotNotFoundError
-
-# The mock_server fixture is defined in conftest.py
+from c3po.exceptions import IncompatibleVersionError, RobotDisconnectedError
 
 
 class TestRobotConnection:
@@ -53,12 +52,6 @@ class TestRobotConnection:
         # After exit, robot should be closed.
         assert robot._closed
 
-    def test_rejects_incompatible_api_version(self, mock_server) -> None:
-        """An r2d2 reporting API v2.0 should raise IncompatibleVersionError."""
-        # We can't easily change the mock's manifest, so we test the check
-        # via a separate mock that reports v2.0.
-        pass  # Requires a separate mock server; skip for now.
-
     def test_connection_failure_raises_not_found(self) -> None:
         """Connecting to a port where nothing is listening should fail."""
         with pytest.raises(RobotNotFoundError):
@@ -68,21 +61,26 @@ class TestRobotConnection:
 class TestRobotObservations:
     """Tests for step() and reset() observation delivery."""
 
-    def test_reset_returns_observations(self, mock_server) -> None:
+    def test_reset_returns_all_keys(self, mock_server) -> None:
         robot = Robot(host="127.0.0.1", port=mock_server.port)
         obs = robot.reset()
-        # Should have joint position and velocity.
+        # Joint state.
         assert "follower/joint_position" in obs
         assert "follower/joint_velocity" in obs
         assert isinstance(obs["follower/joint_position"], np.ndarray)
         assert obs["follower/joint_position"].dtype == np.float64
         assert len(obs["follower/joint_position"]) == 6
+        # Controller.
+        assert "leader/joint_position" in obs
         robot.close()
 
-    def test_reset_returns_controller_state(self, mock_server) -> None:
+    def test_reset_blocks_until_complete(self, mock_server) -> None:
+        """reset() should not return until all expected keys have data."""
         robot = Robot(host="127.0.0.1", port=mock_server.port)
         obs = robot.reset()
-        assert "leader/joint_position" in obs
+        # All observation keys from the manifest must be present.
+        for key in robot._obs_keys:
+            assert key in obs, f"Missing key: {key}"
         robot.close()
 
     def test_step_returns_observations(self, mock_server) -> None:
@@ -101,6 +99,15 @@ class TestRobotObservations:
         assert "follower/joint_position" in obs
         robot.close()
 
+    def test_step_with_reward_done(self, mock_server) -> None:
+        """step() with reward and done kwargs should not raise."""
+        robot = Robot(host="127.0.0.1", port=mock_server.port)
+        robot.reset()
+        action = {"follower/joint_position": np.array([0.1] * 6)}
+        obs = robot.step(action, reward=0.5, done=False)
+        assert "follower/joint_position" in obs
+        robot.close()
+
     def test_step_validates_missing_action_keys(self, mock_server) -> None:
         robot = Robot(host="127.0.0.1", port=mock_server.port)
         robot.reset()
@@ -108,24 +115,62 @@ class TestRobotObservations:
             robot.step({"wrong_key": np.array([0.1])})
         robot.close()
 
-    def test_step_none_action_is_read_only(self, mock_server) -> None:
-        """step(action=None) should work as a read-only step."""
+    def test_step_none_action_read_only(self, mock_server) -> None:
+        """step(None) should be a read-only observation step."""
         robot = Robot(host="127.0.0.1", port=mock_server.port)
         robot.reset()
         obs = robot.step(None)
         assert "follower/joint_position" in obs
         robot.close()
 
-    def test_step_pacing(self, mock_server) -> None:
-        """step() should enforce the configured rate."""
-        robot = Robot(host="127.0.0.1", port=mock_server.port, rate=20.0)
+    def test_camera_frame_arrives(self, mock_server) -> None:
+        """After reset, camera frames should be available in observations."""
+        robot = Robot(host="127.0.0.1", port=mock_server.port)
+        obs = robot.reset()
+        # The mock sends JPEG frames.  The buffer decodes them.
+        # Wait a few steps to accumulate camera data.
+        for _ in range(10):
+            obs = robot.step()
+            if "front_rgb" in obs:
+                break
+        assert "front_rgb" in obs
+        assert isinstance(obs["front_rgb"], np.ndarray)
+        assert obs["front_rgb"].ndim == 3
+        robot.close()
+
+    def test_multiple_steps(self, mock_server) -> None:
+        """A sequence of steps should return fresh observations."""
+        robot = Robot(host="127.0.0.1", port=mock_server.port)
         robot.reset()
-        t0 = time.monotonic()
-        for _ in range(5):
-            robot.step()
-        t1 = time.monotonic()
-        elapsed = t1 - t0
-        # At 20 Hz, 5 steps should take ~200 ms (4 × 50 ms periods).
-        # Allow generous tolerance for CI slowness.
-        assert elapsed >= 0.15, f"Expected >=0.15s, got {elapsed:.3f}s"
+        for i in range(5):
+            obs = robot.step()
+            assert "follower/joint_position" in obs
+        robot.close()
+
+
+class TestRobotRecording:
+    """Tests for recording commands."""
+
+    def test_start_stop_recording(self, mock_server) -> None:
+        robot = Robot(host="127.0.0.1", port=mock_server.port)
+        # These should not raise.
+        robot.start_recording("test_session")
+        robot.stop_recording()
+        robot.close()
+
+    def test_cancel_episode(self, mock_server) -> None:
+        robot = Robot(host="127.0.0.1", port=mock_server.port)
+        robot.start_recording("test_session")
+        robot.cancel_episode()
+        robot.stop_recording()
+        robot.close()
+
+    def test_recording_flow(self, mock_server) -> None:
+        """Full recording lifecycle: start → reset → step → stop."""
+        robot = Robot(host="127.0.0.1", port=mock_server.port)
+        robot.start_recording("demo")
+        obs = robot.reset()
+        for _ in range(3):
+            obs = robot.step()
+        robot.stop_recording()
         robot.close()

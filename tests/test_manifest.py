@@ -2,15 +2,13 @@
 
 from __future__ import annotations
 
-import json
-
 from c3po._manifest import build_observation_keys, parse_manifest
 
 # ---------------------------------------------------------------------------
-# Sample manifest
+# Sample manifest (as received from describe_response.manifest)
 # ---------------------------------------------------------------------------
 
-_MANIFEST = {
+_MANIFEST: dict = {
     "api_version": "1.0",
     "station_model": "so101_teleop",
     "control_rate": 50.0,
@@ -37,64 +35,45 @@ _MANIFEST = {
 }
 
 
-def _make_raw(manifest: dict) -> dict:
-    """Build a raw /describe response dict from a manifest."""
-    return {
-        "robot_model": manifest.get("station_model", "unknown"),
-        "joint_count": manifest["arms"][0]["joint_count"]
-        if manifest.get("arms")
-        else 0,
-        "control_rate": manifest.get("control_rate", 50.0),
-        "camera_names": [c["name"] for c in manifest.get("cameras", [])],
-        "command_mode": manifest["arms"][0]["command_mode"]
-        if manifest.get("arms")
-        else "",
-        "joint_names": manifest["arms"][0]["joint_names"]
-        if manifest.get("arms")
-        else [],
-        "manifest_json": json.dumps(manifest),
-    }
-
-
 class TestParseManifest:
     """Tests for parse_manifest()."""
 
     def test_parses_station_model(self) -> None:
-        result = parse_manifest(_make_raw(_MANIFEST))
+        result = parse_manifest(_MANIFEST)
         assert result["station_model"] == "so101_teleop"
 
     def test_parses_control_rate(self) -> None:
-        result = parse_manifest(_make_raw(_MANIFEST))
+        result = parse_manifest(_MANIFEST)
         assert result["control_rate"] == 50.0
 
     def test_parses_arm_names(self) -> None:
-        result = parse_manifest(_make_raw(_MANIFEST))
+        result = parse_manifest(_MANIFEST)
         assert result["arm_names"] == ["follower"]
 
     def test_parses_camera_names(self) -> None:
-        result = parse_manifest(_make_raw(_MANIFEST))
+        result = parse_manifest(_MANIFEST)
         assert result["camera_names"] == ["front_rgb", "follower/wrist_rgb"]
 
     def test_parses_controller_names(self) -> None:
-        result = parse_manifest(_make_raw(_MANIFEST))
+        result = parse_manifest(_MANIFEST)
         assert result["controller_names"] == ["leader"]
 
     def test_parses_action_keys(self) -> None:
-        result = parse_manifest(_make_raw(_MANIFEST))
+        result = parse_manifest(_MANIFEST)
         assert result["action_keys"] == ["follower/joint_position"]
 
     def test_parses_joint_names(self) -> None:
-        result = parse_manifest(_make_raw(_MANIFEST))
+        result = parse_manifest(_MANIFEST)
         assert result["joint_names"]["follower"] == ["s", "l", "e", "wf", "wr", "g"]
 
     def test_parses_api_version(self) -> None:
-        result = parse_manifest(_make_raw(_MANIFEST))
+        result = parse_manifest(_MANIFEST)
         assert result["api_version"] == "1.0"
 
     def test_single_arm_no_prefix(self) -> None:
         """Single-arm station with empty name → no prefix in action keys."""
         manifest = {
-            **dict(_MANIFEST),
+            **_MANIFEST,
             "arms": [
                 {
                     "name": "",
@@ -104,13 +83,12 @@ class TestParseManifest:
                 }
             ],
         }
-        raw = _make_raw(manifest)
-        result = parse_manifest(raw)
+        result = parse_manifest(manifest)
         assert result["action_keys"] == ["joint_position"]
 
     def test_bimanual_station(self) -> None:
         manifest = {
-            **dict(_MANIFEST),
+            **_MANIFEST,
             "arms": [
                 {
                     "name": "left_follower",
@@ -126,34 +104,42 @@ class TestParseManifest:
                 },
             ],
         }
-        raw = _make_raw(manifest)
-        result = parse_manifest(raw)
+        result = parse_manifest(manifest)
         assert set(result["action_keys"]) == {
             "left_follower/joint_position",
             "right_follower/joint_position",
         }
 
-    def test_backward_compat_flat_fields(self) -> None:
-        """Legacy /describe response without manifest_json."""
-        raw = {
-            "robot_model": "so101",
-            "joint_count": 6,
-            "control_rate": 100.0,
-            "camera_names": ["front_rgb"],
-            "command_mode": "joint_position",
-            "joint_names": ["a", "b", "c", "d", "e", "f"],
-            "manifest_json": "{}",  # empty JSON
+    def test_defaults_on_missing_fields(self) -> None:
+        """Manifest with minimal fields should get sensible defaults."""
+        result = parse_manifest({})
+        assert result["api_version"] == "0.0"
+        assert result["station_model"] == "unknown"
+        assert result["control_rate"] == 50.0
+        assert result["arm_names"] == []
+        assert result["action_keys"] == []
+
+    def test_empty_arms(self) -> None:
+        """Station with no arms should have empty action_keys."""
+        result = parse_manifest({**_MANIFEST, "arms": [], "controllers": []})
+        assert result["arm_names"] == []
+        assert result["action_keys"] == []
+
+    def test_controller_without_joint_names(self) -> None:
+        """Controllers may omit joint_names (e.g. HID devices)."""
+        manifest = {
+            **_MANIFEST,
+            "controllers": [{"name": "gamepad", "type": "button_state"}],
         }
-        result = parse_manifest(raw)
-        assert result["arm_names"] == [""]
-        assert result["action_keys"] == ["joint_position"]
+        result = parse_manifest(manifest)
+        assert result["controller_names"] == ["gamepad"]
 
 
 class TestBuildObservationKeys:
     """Tests for build_observation_keys()."""
 
     def test_single_arm_with_cameras_and_controller(self) -> None:
-        manifest = parse_manifest(_make_raw(_MANIFEST))
+        manifest = parse_manifest(_MANIFEST)
         keys = build_observation_keys(manifest)
         expected = [
             "follower/joint_position",
@@ -165,8 +151,12 @@ class TestBuildObservationKeys:
         assert keys == expected
 
     def test_no_arms(self) -> None:
-        manifest = parse_manifest(
-            _make_raw({**_MANIFEST, "arms": [], "controllers": []})
-        )
+        manifest = parse_manifest({**_MANIFEST, "arms": [], "controllers": []})
         keys = build_observation_keys(manifest)
         assert keys == ["front_rgb", "follower/wrist_rgb"]
+
+    def test_hierarchical_camera_names(self) -> None:
+        """Camera names with '/' (e.g. follower/wrist_rgb) are preserved."""
+        manifest = parse_manifest(_MANIFEST)
+        keys = build_observation_keys(manifest)
+        assert "follower/wrist_rgb" in keys

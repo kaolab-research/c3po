@@ -1,26 +1,29 @@
 """Thread-safe observation buffer.
 
 Used internally by :class:`Robot` to collect data from incoming
-WebSocket messages (delivered on the transport thread) and deliver
-the latest available snapshot to the user-facing ``step()`` call.
+WebSocket messages and deliver the latest available snapshot to
+the user-facing ``step()`` call.
 
-Unlike the previous design, this buffer does NOT block waiting for
-new data on every topic.  It always returns the latest value available
-for each key, making it suitable for non‑blocking step() semantics.
+The buffer stores the latest value for each observation key (joint
+state as ``np.ndarray``, camera frames decoded from JPEG bytes).
+``get()`` returns a snapshot dict without blocking.
 """
 
 from __future__ import annotations
 
 import threading
+from io import BytesIO
 
 import numpy as np
+from PIL import Image
 
 
 class ObservationBuffer:
     """Thread-safe latest-value buffer for observation data.
 
-    Values are updated by the transport thread (via ``update()``).
-    ``get()`` returns the latest snapshot without blocking.
+    Values are updated by :meth:`update` (joint state) and
+    :meth:`update_from_frame` (camera images).  :meth:`get` returns
+    the latest snapshot without blocking.
     """
 
     def __init__(self) -> None:
@@ -32,6 +35,22 @@ class ObservationBuffer:
         """Store the latest value for *key*."""
         with self._lock:
             self._latest[key] = value
+        self._event.set()
+
+    def update_from_frame(self, camera_name: str, jpeg_bytes: bytes) -> None:
+        """Decode a JPEG camera frame and store it as an RGB ``np.ndarray``.
+
+        Parameters
+        ----------
+        camera_name:
+            Observation key for this camera (e.g. ``"front_rgb"``).
+        jpeg_bytes:
+            Raw JPEG image bytes.
+        """
+        img = Image.open(BytesIO(jpeg_bytes))
+        arr = np.array(img.convert("RGB"))
+        with self._lock:
+            self._latest[camera_name] = arr
         self._event.set()
 
     def get(self) -> dict[str, np.ndarray]:
@@ -47,8 +66,6 @@ class ObservationBuffer:
         """Block until at least one observation key has been updated.
 
         Returns ``True`` if data arrived, ``False`` on timeout.
-        Useful for the initial ``reset()`` call to ensure we have
-        at least one observation before returning.
         """
         result = self._event.wait(timeout=timeout)
         if result:

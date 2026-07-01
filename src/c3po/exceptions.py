@@ -4,12 +4,16 @@ from __future__ import annotations
 
 
 class RobotNotFoundError(RuntimeError):
-    """Raised when no /describe service responds within the timeout."""
+    """Raised when the robot station cannot be discovered."""
 
 
 class RobotDisconnectedError(RuntimeError):
-    """Raised when the WebSocket connection to the robot station is lost."""
+    """Raised when the connection to the robot station is lost."""
 
 
 class IncompatibleVersionError(RuntimeError):
     """Raised when the r2d2 server reports an incompatible API version."""
+
+
+class ProtocolError(RuntimeError):
+    """Raised when a protocol message cannot be decoded."""

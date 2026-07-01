@@ -25,6 +25,7 @@ from c3po._protocol import (
     DescribeResponse,
     Encoding,
     Observation,
+    ResetEpisode,
     StartRecording,
     StopRecording,
     decode_json_message,
@@ -228,6 +229,8 @@ async def _r2d2_handler(
                 if stream_task is None:
                     stream_task = asyncio.create_task(_stream_loop())
 
+            elif isinstance(msg, ResetEpisode):
+                pass  # acknowledge silently (episode boundary for recording)
             elif isinstance(msg, StartRecording):
                 _recording = True
             elif isinstance(msg, StopRecording):
