@@ -12,6 +12,7 @@ Graceful no-op on Windows.
 from __future__ import annotations
 
 import logging
+import os
 import sys
 import threading
 
