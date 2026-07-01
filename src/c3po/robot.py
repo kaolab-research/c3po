@@ -276,6 +276,24 @@ class Robot:
         self._check_connected()
         self._transport.send_json(CancelEpisode())
 
+    def recording(self, name: str) -> Recording:
+        """Return a :class:`Recording` context manager for *name*.
+
+        Usage::
+
+            with robot.recording("session_001") as rec:
+                while not rec.stop:
+                    obs = robot.reset()
+                    while not rec.stop and not rec.done:
+                        obs = robot.step(policy(obs))
+                    if rec.rerecord:
+                        robot.cancel_episode()
+                        rec.clear()
+        """
+        from c3po._recording import Recording
+
+        return Recording(self, name)
+
     # ------------------------------------------------------------------
     # Context manager
     # ------------------------------------------------------------------
