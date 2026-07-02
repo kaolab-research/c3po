@@ -139,9 +139,11 @@ class KeyboardListener:
 
         self._running = True
 
-        # Save terminal settings and switch to raw mode.
+        # Save terminal settings and switch to cbreak mode.
+        # cbreak is like raw but preserves output processing (\n → \r\n),
+        # which keeps logger output from drifting across the terminal.
         self._orig_attrs = termios.tcgetattr(self._input_fd)
-        tty.setraw(self._input_fd)
+        tty.setcbreak(self._input_fd)
 
         # Restore terminal on normal exit.
         atexit.register(self._restore_terminal)
