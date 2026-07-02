@@ -182,7 +182,7 @@ with Robot() as robot:
                 obs = robot.step(policy(obs))
             if rec.rerecord:
                 robot.cancel_episode()
-                rec.clear()          # reset done/rerecord flags for next iteration
+            rec.clear()          # reset done/rerecord flags for next iteration
 ```
 
 `robot.recording()` is a convenience context manager that:
@@ -211,7 +211,7 @@ with Robot() as robot:
                 obs = robot.step(policy(obs), reward=0.0)
             if rec.rerecord:
                 robot.cancel_episode()
-                rec.clear()
+            rec.clear()
 ```
 
 The `done` kwarg on `step()` is dataset metadata — it marks the terminal frame in the parquet file. It does not affect the control loop. The keyboard flags (`rec.done`, `rec.stop`) control the loop itself.
@@ -235,7 +235,7 @@ with Robot() as robot:
                 )
             if rec.rerecord:
                 robot.cancel_episode()
-                rec.clear()
+            rec.clear()
 ```
 
 ### Bimanual teleoperation
@@ -254,7 +254,7 @@ with Robot() as robot:
                 })
             if rec.rerecord:
                 robot.cancel_episode()
-                rec.clear()
+            rec.clear()
 ```
 
 ### Policy loop with rewards
@@ -272,7 +272,7 @@ with Robot() as robot:
                                  done=check_done(obs))
             if rec.rerecord:
                 robot.cancel_episode()
-                rec.clear()
+            rec.clear()
 ```
 
 ### Introspecting an unknown station

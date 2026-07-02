@@ -31,6 +31,7 @@ class Encoding:
 
     JPEG_RGB: ClassVar[int] = 0
     JPEG_DEPTH: ClassVar[int] = 1
+    PNG_DEPTH: ClassVar[int] = 2
 
 
 _HEADER_STRUCT = struct.Struct(">I")  # name length
