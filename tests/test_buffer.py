@@ -97,10 +97,34 @@ class TestObservationBufferJpeg:
         img.save(buf, format="JPEG", quality=80)
         return buf.getvalue()
 
+
+    @staticmethod
+    def _make_frame(camera_name: str, jpeg: bytes):
+        """Create a BinaryFrame from JPEG bytes."""
+        from c3po._protocol import BinaryFrame, Encoding
+        return BinaryFrame(
+            camera_name=camera_name,
+            timestamp_ns=0,
+            width=32,
+            height=32,
+            encoding=Encoding.JPEG_RGB,
+            jpeg_bytes=jpeg,
+        )
+        """Return a tiny valid JPEG as bytes."""
+        from io import BytesIO
+
+        from PIL import Image
+
+        rng = __import__("numpy").random.default_rng()
+        img = Image.fromarray(rng.integers(0, 256, (32, 32, 3), dtype="uint8"))
+        buf = BytesIO()
+        img.save(buf, format="JPEG", quality=80)
+        return buf.getvalue()
+
     def test_update_from_frame_stores_rgb_array(self) -> None:
         buf = ObservationBuffer()
         jpeg = self._make_jpeg()
-        buf.update_from_frame("front_rgb", jpeg)
+        buf.update_from_frame(self._make_frame("front_rgb", jpeg))
         obs = buf.get()
         assert "front_rgb" in obs
         arr = obs["front_rgb"]
@@ -113,16 +137,16 @@ class TestObservationBufferJpeg:
         buf = ObservationBuffer()
         jpeg1 = self._make_jpeg()
         jpeg2 = self._make_jpeg()
-        buf.update_from_frame("front_rgb", jpeg1)
+        buf.update_from_frame(self._make_frame("front_rgb", jpeg1))
         first = buf.get()["front_rgb"].copy()
-        buf.update_from_frame("front_rgb", jpeg2)
+        buf.update_from_frame(self._make_frame("front_rgb", jpeg2))
         second = buf.get()["front_rgb"]
         assert not np.array_equal(first, second)
 
     def test_update_mixed_joint_state_and_jpeg(self) -> None:
         buf = ObservationBuffer()
         buf.update("follower/joint_position", np.array([0.1, 0.2, 0.3]))
-        buf.update_from_frame("front_rgb", self._make_jpeg())
+        buf.update_from_frame(self._make_frame("front_rgb", self._make_jpeg()))
         obs = buf.get()
         assert "follower/joint_position" in obs
         assert "front_rgb" in obs

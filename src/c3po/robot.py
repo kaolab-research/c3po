@@ -338,7 +338,7 @@ class Robot:
             for key, value in msg.data.items():
                 self._buffer.update(key, np.array(value, dtype=np.float64))
         elif isinstance(msg, BinaryFrame):
-            self._buffer.update_from_frame(msg.camera_name, msg.jpeg_bytes)
+            self._buffer.update_from_frame(msg)
 
     def _validate_action(self, action: dict[str, np.ndarray]) -> None:
         """Check that *action* contains all required keys."""

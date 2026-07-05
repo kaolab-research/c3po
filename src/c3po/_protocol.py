@@ -32,11 +32,13 @@ class Encoding:
     JPEG_RGB: ClassVar[int] = 0
     JPEG_DEPTH: ClassVar[int] = 1
     PNG_DEPTH: ClassVar[int] = 2
+    RAW_RGB: ClassVar[int] = 3
+    RAW_DEPTH: ClassVar[int] = 4
 
 
 _HEADER_STRUCT = struct.Struct(">I")  # name length
-_META_STRUCT = struct.Struct(">QIIB")  # timestamp_ns, width, height, encoding
-_HEADER_OVERHEAD = _HEADER_STRUCT.size + _META_STRUCT.size  # 4 + 8 + 4 + 4 + 1 = 21
+_META_STRUCT = struct.Struct(">QIIBI")  # ts_ns, width, height, encoding, frame_id
+_HEADER_OVERHEAD = _HEADER_STRUCT.size + _META_STRUCT.size  # 4 + 8+4+4+1+4 = 25
 
 
 # ---------------------------------------------------------------------------
@@ -226,8 +228,9 @@ class BinaryFrame:
         [8 B  ts_ns     ]  uint64 big-endian — capture timestamp in nanoseconds
         [4 B  width     ]  uint32 big-endian
         [4 B  height    ]  uint32 big-endian
-        [1 B  encoding  ]  0 = JPEG_RGB, 1 = JPEG_DEPTH
-        [M B  jpeg_bytes]  raw JPEG payload
+        [1 B  encoding  ]  0=JPEG_RGB, 1=JPEG_DEPTH, 2=PNG_DEPTH, 3=RAW_RGB, 4=RAW_DEPTH
+        [4 B  frame_id  ]  uint32 big-endian — monotonic per camera, 0 if unused
+        [M B  jpeg_bytes]  raw payload (JPEG bytes or raw numpy bytes)
     """
 
     camera_name: str
@@ -236,6 +239,7 @@ class BinaryFrame:
     height: int
     encoding: int
     jpeg_bytes: bytes
+    frame_id: int = 0
 
 
 def encode_binary_frame(frame: BinaryFrame) -> bytes:
@@ -244,7 +248,7 @@ def encode_binary_frame(frame: BinaryFrame) -> bytes:
     header = _HEADER_STRUCT.pack(len(name_bytes))
     header += name_bytes
     header += _META_STRUCT.pack(
-        frame.timestamp_ns, frame.width, frame.height, frame.encoding
+        frame.timestamp_ns, frame.width, frame.height, frame.encoding, frame.frame_id
     )
     return header + frame.jpeg_bytes
 
@@ -274,7 +278,7 @@ def decode_binary_frame(data: bytes) -> BinaryFrame:
     camera_name = data[offset : offset + name_len].decode("utf-8")
     offset += name_len
 
-    ts_ns, width, height, encoding = _META_STRUCT.unpack(
+    ts_ns, width, height, encoding, frame_id = _META_STRUCT.unpack(
         data[offset : offset + _META_STRUCT.size]
     )
     offset += _META_STRUCT.size
@@ -288,4 +292,5 @@ def decode_binary_frame(data: bytes) -> BinaryFrame:
         height=height,
         encoding=encoding,
         jpeg_bytes=jpeg_bytes,
+        frame_id=frame_id,
     )

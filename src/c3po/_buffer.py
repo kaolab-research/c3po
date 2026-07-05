@@ -5,17 +5,23 @@ WebSocket messages and deliver the latest available snapshot to
 the user-facing ``step()`` call.
 
 The buffer stores the latest value for each observation key (joint
-state as ``np.ndarray``, camera frames decoded from JPEG bytes).
+state as ``np.ndarray``, camera frames decoded from JPEG or raw bytes).
 ``get()`` returns a snapshot dict without blocking.
 """
 
 from __future__ import annotations
 
+import logging
 import threading
 from io import BytesIO
+from typing import TYPE_CHECKING
 
 import numpy as np
-from PIL import Image
+
+if TYPE_CHECKING:
+    from c3po._protocol import BinaryFrame
+
+logger = logging.getLogger(__name__)
 
 
 class ObservationBuffer:
@@ -30,6 +36,7 @@ class ObservationBuffer:
         self._lock = threading.Lock()
         self._latest: dict[str, np.ndarray] = {}
         self._event = threading.Event()
+        self._last_frame_ids: dict[str, int] = {}
 
     def update(self, key: str, value: np.ndarray) -> None:
         """Store the latest value for *key*."""
@@ -37,20 +44,63 @@ class ObservationBuffer:
             self._latest[key] = value
         self._event.set()
 
-    def update_from_frame(self, camera_name: str, jpeg_bytes: bytes) -> None:
-        """Decode a JPEG camera frame and store it as an RGB ``np.ndarray``.
+    def update_from_frame(self, frame: BinaryFrame) -> None:
+        """Decode a camera frame and store it as a ``np.ndarray``.
+
+        Handles JPEG, PNG, raw RGB, and raw depth encodings.
 
         Parameters
         ----------
-        camera_name:
-            Observation key for this camera (e.g. ``"front_rgb"``).
-        jpeg_bytes:
-            Raw JPEG image bytes.
+        frame:
+            A ``BinaryFrame`` received from the WebSocket transport.
         """
-        img = Image.open(BytesIO(jpeg_bytes))
-        arr = np.array(img.convert("RGB"))
+        from c3po._protocol import Encoding
+
+        encoding = frame.encoding
+        payload = frame.jpeg_bytes
+
+        if encoding == Encoding.JPEG_RGB:
+            from PIL import Image
+
+            img = Image.open(BytesIO(payload))
+            arr = np.array(img.convert("RGB"))
+        elif encoding == Encoding.RAW_RGB:
+            arr = np.frombuffer(payload, dtype=np.uint8).reshape(
+                frame.height, frame.width, 3
+            )
+        elif encoding == Encoding.RAW_DEPTH:
+            arr = np.frombuffer(payload, dtype=np.uint16).reshape(
+                frame.height, frame.width
+            )
+        elif encoding == Encoding.PNG_DEPTH:
+            from PIL import Image
+
+            img = Image.open(BytesIO(payload))
+            arr = np.array(img).astype(np.uint16)
+        else:
+            logger.warning(
+                "Unknown frame encoding %d for camera %r — skipping",
+                encoding,
+                frame.camera_name,
+            )
+            return
+
+        # Track frame IDs for diagnostics.
+        fid = frame.frame_id
+        if fid > 0:
+            last = self._last_frame_ids.get(frame.camera_name, 0)
+            if last > 0 and fid > last + 1:
+                logger.warning(
+                    "Camera %r dropped %d frame(s) (last id=%d, current id=%d)",
+                    frame.camera_name,
+                    fid - last - 1,
+                    last,
+                    fid,
+                )
+            self._last_frame_ids[frame.camera_name] = fid
+
         with self._lock:
-            self._latest[camera_name] = arr
+            self._latest[frame.camera_name] = arr
         self._event.set()
 
     def get(self) -> dict[str, np.ndarray]:

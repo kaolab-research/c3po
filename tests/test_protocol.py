@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 
 import pytest
+
 from c3po._protocol import (
     # Message types
     Action,
@@ -177,3 +178,70 @@ class TestBinaryFrames:
         too_short = b"\x00\x00\x00"  # 3 bytes — can't even read name_len
         with pytest.raises(ProtocolError, match="too short"):
             decode_binary_frame(too_short)
+
+    def test_raw_rgb_roundtrip(self) -> None:
+        """Raw RGB payload survives encode → decode with frame_id."""
+        raw_payload = bytes([i % 256 for i in range(640 * 480 * 3)])
+        frame = BinaryFrame(
+            camera_name="front_rgb",
+            timestamp_ns=42,
+            width=640,
+            height=480,
+            encoding=Encoding.RAW_RGB,
+            jpeg_bytes=raw_payload,
+            frame_id=7,
+        )
+        raw = encode_binary_frame(frame)
+        decoded = decode_binary_frame(raw)
+        assert decoded.camera_name == "front_rgb"
+        assert decoded.width == 640
+        assert decoded.height == 480
+        assert decoded.encoding == Encoding.RAW_RGB
+        assert decoded.jpeg_bytes == raw_payload
+        assert decoded.frame_id == 7
+
+    def test_raw_depth_roundtrip(self) -> None:
+        """Raw depth payload survives encode → decode with frame_id."""
+        raw_payload = bytes([i % 256 for i in range(640 * 480 * 2)])
+        frame = BinaryFrame(
+            camera_name="realsense_depth",
+            timestamp_ns=99,
+            width=640,
+            height=480,
+            encoding=Encoding.RAW_DEPTH,
+            jpeg_bytes=raw_payload,
+            frame_id=3,
+        )
+        raw = encode_binary_frame(frame)
+        decoded = decode_binary_frame(raw)
+        assert decoded.encoding == Encoding.RAW_DEPTH
+        assert decoded.jpeg_bytes == raw_payload
+        assert decoded.frame_id == 3
+
+    def test_frame_id_defaults_to_zero(self) -> None:
+        """frame_id defaults to 0 when not explicitly set."""
+        frame = BinaryFrame(
+            camera_name="cam",
+            timestamp_ns=0,
+            width=1,
+            height=1,
+            encoding=Encoding.JPEG_RGB,
+            jpeg_bytes=b"x",
+        )
+        assert frame.frame_id == 0
+        raw = encode_binary_frame(frame)
+        decoded = decode_binary_frame(raw)
+        assert decoded.frame_id == 0
+
+    def test_all_encoding_constants_distinct(self) -> None:
+        """All five encoding values must be unique."""
+        values = [
+            Encoding.JPEG_RGB,
+            Encoding.JPEG_DEPTH,
+            Encoding.PNG_DEPTH,
+            Encoding.RAW_RGB,
+            Encoding.RAW_DEPTH,
+        ]
+        assert len(set(values)) == len(values)
+        assert Encoding.RAW_RGB == 3
+        assert Encoding.RAW_DEPTH == 4
