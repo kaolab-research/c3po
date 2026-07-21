@@ -171,6 +171,25 @@ class Robot:
         """Mapping from arm key to ordered joint name list."""
         return dict(self._manifest["joint_names"])
 
+    @property
+    def camera_stream_info(self) -> dict[str, dict[str, list[int]]]:
+        """Mapping from camera name to capture and streaming resolutions.
+
+        Each entry is a dict with ``"capture_resolution"`` (what the
+        hardware records) and ``"stream_resolution"`` (what arrives
+        over the WebSocket — may be lower if a streaming cap is active).
+        """
+        info: dict[str, dict[str, list[int]]] = {}
+        for cam in self._manifest.get("cameras", []):
+            name = cam["name"]
+            capture = cam.get("resolution", [0, 0])
+            stream = cam.get("stream_resolution", capture)
+            info[name] = {
+                "capture_resolution": list(capture),
+                "stream_resolution": list(stream),
+            }
+        return info
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
