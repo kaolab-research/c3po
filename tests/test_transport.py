@@ -75,7 +75,7 @@ class TestWebSocketTransport:
 
         assert msg.camera_name == "front_rgb"
         assert msg.encoding == 0  # JPEG_RGB
-        assert len(msg.jpeg_bytes) > 100
+        assert len(msg.payload) > 100
         transport.close()
 
     def test_recv_binary_frame_reassembles_jpeg(self, mock_server) -> None:
@@ -94,9 +94,9 @@ class TestWebSocketTransport:
             pytest.fail("No binary frame received")
 
         # The JPEG should start with the SOI marker.
-        assert msg.jpeg_bytes[:2] == b"\xff\xd8"
+        assert msg.payload[:2] == b"\xff\xd8"
         # And end with EOI.
-        assert msg.jpeg_bytes[-2:] == b"\xff\xd9"
+        assert msg.payload[-2:] == b"\xff\xd9"
         transport.close()
 
     def test_close_cleanly(self, mock_server) -> None:

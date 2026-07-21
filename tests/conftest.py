@@ -204,7 +204,7 @@ async def _r2d2_handler(
                     width=w,
                     height=h,
                     encoding=Encoding.JPEG_RGB,
-                    jpeg_bytes=jpeg,
+                    payload=jpeg,
                 )
                 try:
                     await websocket.send(encode_binary_frame(frame))

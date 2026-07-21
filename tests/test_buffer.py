@@ -108,7 +108,7 @@ class TestObservationBufferJpeg:
             width=32,
             height=32,
             encoding=Encoding.JPEG_RGB,
-            jpeg_bytes=jpeg,
+            payload=jpeg,
         )
         """Return a tiny valid JPEG as bytes."""
         from io import BytesIO

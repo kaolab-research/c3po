@@ -140,7 +140,7 @@ class TestBinaryFrames:
             width=1280,
             height=720,
             encoding=Encoding.JPEG_RGB,
-            jpeg_bytes=b"",
+            payload=b"",
         )
         raw = encode_binary_frame(frame)
         decoded = decode_binary_frame(raw)
@@ -149,7 +149,7 @@ class TestBinaryFrames:
         assert decoded.width == 1280
         assert decoded.height == 720
         assert decoded.encoding == Encoding.JPEG_RGB
-        assert decoded.jpeg_bytes == b""
+        assert decoded.payload == b""
 
     def test_frame_with_jpeg_payload(self) -> None:
         """JPEG bytes survive the roundtrip byte-for-byte."""
@@ -160,12 +160,12 @@ class TestBinaryFrames:
             width=640,
             height=480,
             encoding=Encoding.JPEG_RGB,
-            jpeg_bytes=jpeg,
+            payload=jpeg,
         )
         raw = encode_binary_frame(frame)
         decoded = decode_binary_frame(raw)
         assert decoded.camera_name == "follower/wrist_rgb"
-        assert decoded.jpeg_bytes == jpeg
+        assert decoded.payload == jpeg
 
     def test_encoding_constants_are_distinct(self) -> None:
         """JPEG_RGB and JPEG_DEPTH must have different values."""
@@ -188,7 +188,7 @@ class TestBinaryFrames:
             width=640,
             height=480,
             encoding=Encoding.RAW_RGB,
-            jpeg_bytes=raw_payload,
+            payload=raw_payload,
             frame_id=7,
         )
         raw = encode_binary_frame(frame)
@@ -197,7 +197,7 @@ class TestBinaryFrames:
         assert decoded.width == 640
         assert decoded.height == 480
         assert decoded.encoding == Encoding.RAW_RGB
-        assert decoded.jpeg_bytes == raw_payload
+        assert decoded.payload == raw_payload
         assert decoded.frame_id == 7
 
     def test_raw_depth_roundtrip(self) -> None:
@@ -209,13 +209,13 @@ class TestBinaryFrames:
             width=640,
             height=480,
             encoding=Encoding.RAW_DEPTH,
-            jpeg_bytes=raw_payload,
+            payload=raw_payload,
             frame_id=3,
         )
         raw = encode_binary_frame(frame)
         decoded = decode_binary_frame(raw)
         assert decoded.encoding == Encoding.RAW_DEPTH
-        assert decoded.jpeg_bytes == raw_payload
+        assert decoded.payload == raw_payload
         assert decoded.frame_id == 3
 
     def test_frame_id_defaults_to_zero(self) -> None:
@@ -226,7 +226,7 @@ class TestBinaryFrames:
             width=1,
             height=1,
             encoding=Encoding.JPEG_RGB,
-            jpeg_bytes=b"x",
+            payload=b"x",
         )
         assert frame.frame_id == 0
         raw = encode_binary_frame(frame)

@@ -112,7 +112,7 @@ class TestMockR2D2:
             frame = decode_binary_frame(data)
             assert frame.camera_name == "front_rgb"
             assert frame.encoding == 0  # JPEG_RGB
-            assert len(frame.jpeg_bytes) > 100  # non-trivial JPEG
+            assert len(frame.payload) > 100  # non-trivial JPEG
         finally:
             ws.close()
 

@@ -238,7 +238,7 @@ class BinaryFrame:
         [4 B  height    ]  uint32 big-endian
         [1 B  encoding  ]  0=JPEG_RGB, 1=JPEG_DEPTH, 2=PNG_DEPTH, 3=RAW_RGB, 4=RAW_DEPTH
         [4 B  frame_id  ]  uint32 big-endian — monotonic per camera, 0 if unused
-        [M B  jpeg_bytes]  raw payload (JPEG bytes or raw numpy bytes)
+        [M B  payload]    raw payload (JPEG bytes or raw numpy bytes)
     """
 
     camera_name: str
@@ -246,7 +246,7 @@ class BinaryFrame:
     width: int
     height: int
     encoding: int
-    jpeg_bytes: bytes
+    payload: bytes
     frame_id: int = 0
 
 
@@ -258,7 +258,7 @@ def encode_binary_frame(frame: BinaryFrame) -> bytes:
     header += _META_STRUCT.pack(
         frame.timestamp_ns, frame.width, frame.height, frame.encoding, frame.frame_id
     )
-    return header + frame.jpeg_bytes
+    return header + frame.payload
 
 
 def decode_binary_frame(data: bytes) -> BinaryFrame:
@@ -291,7 +291,7 @@ def decode_binary_frame(data: bytes) -> BinaryFrame:
     )
     offset += _META_STRUCT.size
 
-    jpeg_bytes = data[offset:]
+    payload = data[offset:]
 
     return BinaryFrame(
         camera_name=camera_name,
@@ -299,6 +299,6 @@ def decode_binary_frame(data: bytes) -> BinaryFrame:
         width=width,
         height=height,
         encoding=encoding,
-        jpeg_bytes=jpeg_bytes,
+        payload=payload,
         frame_id=frame_id,
     )

@@ -57,7 +57,7 @@ class ObservationBuffer:
         from c3po._protocol import Encoding
 
         encoding = frame.encoding
-        payload = frame.jpeg_bytes
+        payload = frame.payload
 
         if encoding == Encoding.JPEG_RGB:
             from PIL import Image
