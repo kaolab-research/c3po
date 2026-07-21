@@ -32,19 +32,19 @@ class TestRecording:
         """Simulating key presses should set the corresponding flags."""
         robot = Robot(host="127.0.0.1", port=mock_server.port)
         with Recording(robot, "test_session") as rec:
-            rec._keyboard._handle_key("n")
+            rec._keyboard.simulate_key("n")
             assert rec.done is True
             assert rec.stop is False
 
-            rec._keyboard._handle_key("q")
+            rec._keyboard.simulate_key("q")
             assert rec.stop is True
         robot.close()
 
     def test_clear_resets_done_and_rerecord(self, mock_server) -> None:
         robot = Robot(host="127.0.0.1", port=mock_server.port)
         with Recording(robot, "test_session") as rec:
-            rec._keyboard._handle_key("n")
-            rec._keyboard._handle_key("r")
+            rec._keyboard.simulate_key("n")
+            rec._keyboard.simulate_key("r")
             assert rec.done is True
             assert rec.rerecord is True
 
@@ -57,7 +57,7 @@ class TestRecording:
     def test_stop_persists_after_clear(self, mock_server) -> None:
         robot = Robot(host="127.0.0.1", port=mock_server.port)
         with Recording(robot, "test_session") as rec:
-            rec._keyboard._handle_key("q")
+            rec._keyboard.simulate_key("q")
             rec.clear()
             assert rec.stop is True
         robot.close()

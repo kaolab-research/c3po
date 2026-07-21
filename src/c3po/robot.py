@@ -291,7 +291,7 @@ class Robot:
         self._check_connected()
         self._transport.send_json(CancelEpisode())
 
-    def recording(self, name: str) -> Recording:
+    def recording(self, name: str) -> "Recording":
         """Return a :class:`Recording` context manager for *name*.
 
         Usage::

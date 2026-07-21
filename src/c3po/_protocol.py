@@ -3,6 +3,14 @@
 This module defines every message that crosses the WebSocket between c3po
 and r2d2.  It has zero dependencies outside the standard library and is
 duplicated in both repositories (they change rarely and independently).
+
+.. warning::
+
+    This file is manually duplicated in c3po and r2d2.  Any change here
+    MUST be mirrored in the other repository's copy.  The two copies are
+    the protocol contract — divergence causes silent incompatibility.
+    Consider running ``diff r2d2/src/r2d2/_protocol.py c3po/src/c3po/_protocol.py``
+    after making changes.
 """
 
 from __future__ import annotations

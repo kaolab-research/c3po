@@ -109,6 +109,15 @@ class KeyboardListener:
             self._done = False
             self._rerecord = False
 
+    def simulate_key(self, key: str) -> None:
+        """Simulate a key press for testing.
+
+        This is the public entry point for injecting synthetic key events
+        without requiring a real TTY or background thread.  Calls
+        :meth:`_handle_key` with the thread lock held.
+        """
+        self._handle_key(key)
+
     # ------------------------------------------------------------------
     # Context manager
     # ------------------------------------------------------------------
@@ -195,7 +204,7 @@ class KeyboardListener:
 
     def _restore_terminal(self) -> None:
         """Restore the terminal to its original settings."""
-        if self._orig_attrs is None:
+        if self._orig_attrs is None or self._input_fd is None:
             return
         try:
             termios.tcsetattr(self._input_fd, termios.TCSADRAIN, self._orig_attrs)

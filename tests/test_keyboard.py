@@ -27,46 +27,46 @@ class TestKeyboardListenerParser:
 
     def test_q_sets_stop(self) -> None:
         kl = self._make_listener()
-        kl._handle_key("q")
+        kl.simulate_key("q")
         assert kl.stop is True
         assert kl.done is False
         assert kl.rerecord is False
 
     def test_n_sets_done(self) -> None:
         kl = self._make_listener()
-        kl._handle_key("n")
+        kl.simulate_key("n")
         assert kl.stop is False
         assert kl.done is True
         assert kl.rerecord is False
 
     def test_r_sets_rerecord(self) -> None:
         kl = self._make_listener()
-        kl._handle_key("r")
+        kl.simulate_key("r")
         assert kl.stop is False
         assert kl.done is False
         assert kl.rerecord is True
 
     def test_uppercase_keys_work(self) -> None:
         kl = self._make_listener()
-        kl._handle_key("Q")
+        kl.simulate_key("Q")
         assert kl.stop is True
-        kl._handle_key("N")
+        kl.simulate_key("N")
         assert kl.done is True
-        kl._handle_key("R")
+        kl.simulate_key("R")
         assert kl.rerecord is True
 
     def test_unknown_keys_ignored(self) -> None:
         kl = self._make_listener()
         for key in ("a", "z", "1", " ", "\x1b"):
-            kl._handle_key(key)
+            kl.simulate_key(key)
         assert kl.stop is False
         assert kl.done is False
         assert kl.rerecord is False
 
     def test_clear_resets_done_and_rerecord(self) -> None:
         kl = self._make_listener()
-        kl._handle_key("n")
-        kl._handle_key("r")
+        kl.simulate_key("n")
+        kl.simulate_key("r")
         assert kl.done is True
         assert kl.rerecord is True
         kl.clear()
@@ -78,7 +78,7 @@ class TestKeyboardListenerParser:
     def test_stop_is_terminal(self) -> None:
         """stop is never reset by clear()."""
         kl = self._make_listener()
-        kl._handle_key("q")
+        kl.simulate_key("q")
         assert kl.stop is True
         kl.clear()
         assert kl.stop is True  # stop persists
@@ -86,8 +86,8 @@ class TestKeyboardListenerParser:
     def test_multiple_keys_accumulate(self) -> None:
         """Pressing n then q should set both flags."""
         kl = self._make_listener()
-        kl._handle_key("n")
-        kl._handle_key("q")
+        kl.simulate_key("n")
+        kl.simulate_key("q")
         assert kl.done is True
         assert kl.stop is True
 
