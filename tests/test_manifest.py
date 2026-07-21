@@ -134,6 +134,32 @@ class TestParseManifest:
         result = parse_manifest(manifest)
         assert result["controller_names"] == ["gamepad"]
 
+    # -- streaming resolution (Phase 9) -------------------------------------
+
+    def test_camera_stream_resolution_preserved(self) -> None:
+        """stream_resolution in camera entries is preserved during parsing."""
+        manifest = {
+            **_MANIFEST,
+            "cameras": [
+                {
+                    "name": "front_rgb",
+                    "resolution": [720, 1280],
+                    "stream_resolution": [480, 854],
+                }
+            ],
+        }
+        result = parse_manifest(manifest)
+        cam = result["cameras"][0]
+        assert cam["name"] == "front_rgb"
+        assert cam["resolution"] == [720, 1280]
+        assert cam.get("stream_resolution") == [480, 854]
+
+    def test_camera_stream_resolution_omitted_when_absent(self) -> None:
+        """Cameras without stream_resolution should not have the key."""
+        result = parse_manifest(_MANIFEST)
+        for cam in result["cameras"]:
+            assert "stream_resolution" not in cam
+
 
 class TestBuildObservationKeys:
     """Tests for build_observation_keys()."""
