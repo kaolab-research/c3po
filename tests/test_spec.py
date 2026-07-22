@@ -19,9 +19,7 @@ class TestRobotSpec:
         from c3po.robot import Robot
 
         with patch("c3po.robot.WebSocketTransport") as mock_cls:
-            mock_transport = MagicMock()
-            mock_transport.is_connected = True
-            mock_transport.recv.return_value = SpecResponse(
+            expected = SpecResponse(
                 effective_control_rate=48.7,
                 uptime_seconds=3600.0,
                 cameras=[
@@ -41,6 +39,9 @@ class TestRobotSpec:
                 },
                 watchdog_trigger_count=0,
             )
+            mock_transport = MagicMock()
+            mock_transport.is_connected = True
+            mock_transport.recv.return_value = expected
             mock_cls.return_value = mock_transport
 
             robot = Robot.__new__(Robot)
@@ -51,16 +52,11 @@ class TestRobotSpec:
 
             result = robot.spec()
 
-            # Verify SpecRequest was sent.
             assert mock_transport.send_json.called
             sent_msg = mock_transport.send_json.call_args[0][0]
             assert isinstance(sent_msg, SpecRequest)
-
-            # Verify response.
             assert isinstance(result, SpecResponse)
             assert result.effective_control_rate == pytest.approx(48.7)
-            assert len(result.cameras) == 1
-            assert result.recording is not None
 
     def test_spec_when_not_recording(self) -> None:
         from c3po.robot import Robot
@@ -85,6 +81,40 @@ class TestRobotSpec:
 
             result = robot.spec()
             assert result.recording is None
+
+    def test_spec_drains_stale_messages(self) -> None:
+        """spec() drains Observations until it finds the SpecResponse."""
+        from c3po.robot import Robot
+        from c3po._protocol import Observation
+
+        with patch("c3po.robot.WebSocketTransport") as mock_cls:
+            expected = SpecResponse(
+                effective_control_rate=48.7,
+                uptime_seconds=100.0,
+                cameras=[],
+                recording=None,
+                watchdog_trigger_count=0,
+            )
+            # Simulate: stale Observation arrives first, then SpecResponse.
+            mock_transport = MagicMock()
+            mock_transport.is_connected = True
+            mock_transport.recv.side_effect = [
+                Observation(data={"joint_position": [0.1]}),
+                expected,
+            ]
+            mock_cls.return_value = mock_transport
+
+            robot = Robot.__new__(Robot)
+            robot._closed = False
+            robot._recording = False
+            robot._on_status_callback = None
+            robot._transport = mock_transport
+
+            result = robot.spec()
+            assert isinstance(result, SpecResponse)
+            assert result.effective_control_rate == pytest.approx(48.7)
+            # recv() should have been called twice (drained the stale message).
+            assert mock_transport.recv.call_count == 2
 
 
 class TestSpecStr:

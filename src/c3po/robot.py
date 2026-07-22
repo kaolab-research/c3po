@@ -337,12 +337,13 @@ class Robot:
         """
         self._check_connected()
         self._transport.send_json(SpecRequest())
-        msg = self._transport.recv(timeout=5.0)
-        if isinstance(msg, SpecResponse):
-            return msg
-        raise RuntimeError(
-            f"Expected SpecResponse, got {type(msg).__name__}"
-        )
+        deadline = time.monotonic() + 5.0
+        while time.monotonic() < deadline:
+            msg = self._transport.recv(timeout=min(1.0, deadline - time.monotonic()))
+            if isinstance(msg, SpecResponse):
+                return msg
+            # Drain Observations, BinaryFrames, and StatusMessages.
+        raise RuntimeError("Timed out waiting for SpecResponse from r2d2")
 
     def recording(self, name: str) -> "Recording":
         """Return a :class:`Recording` context manager for *name*.
