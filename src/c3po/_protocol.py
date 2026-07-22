@@ -153,6 +153,29 @@ class StatusMessage:
     type: str = field(default="status", init=False)
 
 
+@dataclass
+class SpecRequest:
+    """Sent by c3po to request live runtime metrics from r2d2."""
+
+    type: str = field(default="spec_request", init=False)
+
+
+@dataclass
+class SpecResponse:
+    """Sent by r2d2 in response to a spec_request.
+
+    Contains live metrics: effective control rate, camera stats,
+    recording state, and watchdog trigger count.
+    """
+
+    effective_control_rate: float
+    uptime_seconds: float
+    cameras: list[dict[str, Any]]
+    recording: dict[str, Any] | None
+    watchdog_trigger_count: int
+    type: str = field(default="spec_response", init=False)
+
+
 # Registry: ``type`` field value → dataclass constructor.
 # Used by ``decode_json_message`` for dispatch.
 _MESSAGE_REGISTRY: dict[str, type] = {
@@ -166,6 +189,8 @@ _MESSAGE_REGISTRY: dict[str, type] = {
     "stop_recording": StopRecording,
     "cancel_episode": CancelEpisode,
     "status": StatusMessage,
+    "spec_request": SpecRequest,
+    "spec_response": SpecResponse,
 }
 
 

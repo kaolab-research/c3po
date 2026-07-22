@@ -32,6 +32,8 @@ from c3po._protocol import (
     DescribeRequest,
     Observation,
     ResetEpisode,
+    SpecRequest,
+    SpecResponse,
     StartRecording,
     StatusMessage,
     StopRecording,
@@ -325,6 +327,22 @@ class Robot:
         """Tell r2d2 to discard the current in‑progress episode."""
         self._check_connected()
         self._transport.send_json(CancelEpisode())
+
+    def spec(self) -> SpecResponse:
+        """Request live runtime metrics from r2d2.
+
+        Returns a :class:`SpecResponse` with effective control rate,
+        camera stats, recording state, and watchdog trigger count.
+        Use :func:`c3po.format_spec` for a human-readable display.
+        """
+        self._check_connected()
+        self._transport.send_json(SpecRequest())
+        msg = self._transport.recv(timeout=5.0)
+        if isinstance(msg, SpecResponse):
+            return msg
+        raise RuntimeError(
+            f"Expected SpecResponse, got {type(msg).__name__}"
+        )
 
     def recording(self, name: str) -> "Recording":
         """Return a :class:`Recording` context manager for *name*.
