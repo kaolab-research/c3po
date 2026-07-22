@@ -1,11 +1,10 @@
-"""Tests for c3po Robot.spec() method and format_spec() formatter.
+"""Tests for c3po Robot.spec() method.
 
 Phase 11: runtime introspection.
 """
 
 from __future__ import annotations
 
-import re
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -88,12 +87,10 @@ class TestRobotSpec:
             assert result.recording is None
 
 
-class TestFormatSpec:
-    """Tests for format_spec() — human-readable spec output."""
+class TestSpecStr:
+    """Tests for SpecResponse.__str__ — human-readable formatting."""
 
-    def test_format_includes_key_sections(self) -> None:
-        from c3po._spec import format_spec
-
+    def test_str_includes_key_sections(self) -> None:
         spec = SpecResponse(
             effective_control_rate=48.7,
             uptime_seconds=3662.0,
@@ -121,11 +118,11 @@ class TestFormatSpec:
             },
             watchdog_trigger_count=0,
         )
-        output = format_spec(spec)
+        output = str(spec)
 
         assert "r2d2" in output.lower()
         assert "48.7" in output
-        assert "1h 1m" in output  # 3662s = 1h 1m 2s
+        assert "1h 1m" in output
         assert "front_rgb" in output
         assert "720" in output and "480" in output
         assert "28.3" in output
@@ -134,9 +131,7 @@ class TestFormatSpec:
         assert "5" in output
         assert "1250" in output
 
-    def test_format_no_cameras(self) -> None:
-        from c3po._spec import format_spec
-
+    def test_str_no_cameras(self) -> None:
         spec = SpecResponse(
             effective_control_rate=50.0,
             uptime_seconds=10.0,
@@ -144,13 +139,11 @@ class TestFormatSpec:
             recording=None,
             watchdog_trigger_count=0,
         )
-        output = format_spec(spec)
+        output = str(spec)
         assert "(none)" in output.lower()
         assert "not recording" in output.lower()
 
-    def test_format_watchdog_triggers(self) -> None:
-        from c3po._spec import format_spec
-
+    def test_str_watchdog_triggers(self) -> None:
         spec = SpecResponse(
             effective_control_rate=50.0,
             uptime_seconds=10.0,
@@ -158,6 +151,6 @@ class TestFormatSpec:
             recording=None,
             watchdog_trigger_count=3,
         )
-        output = format_spec(spec)
+        output = str(spec)
         assert "3" in output
         assert "trigger" in output.lower()

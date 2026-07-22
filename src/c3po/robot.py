@@ -333,7 +333,7 @@ class Robot:
 
         Returns a :class:`SpecResponse` with effective control rate,
         camera stats, recording state, and watchdog trigger count.
-        Use :func:`c3po.format_spec` for a human-readable display.
+        Use ``str(robot.spec())`` for a human-readable display.
         """
         self._check_connected()
         self._transport.send_json(SpecRequest())

@@ -175,6 +175,80 @@ class SpecResponse:
     watchdog_trigger_count: int
     type: str = field(default="spec_response", init=False)
 
+    def __str__(self) -> str:
+        """Human-readable table of runtime metrics."""
+        return _format_spec(self)
+
+
+# ---------------------------------------------------------------------------
+# SpecResponse formatting helpers
+# ---------------------------------------------------------------------------
+
+
+def _fmt_duration(seconds: float) -> str:
+    if seconds < 60:
+        return f"{int(seconds)}s"
+    mins, secs = divmod(int(seconds), 60)
+    if mins < 60:
+        return f"{mins}m {secs}s"
+    hrs, mins = divmod(mins, 60)
+    return f"{hrs}h {mins}m {secs}s"
+
+
+def _fmt_resolution(res: list[int]) -> str:
+    h, w = res[0], res[1]
+    if h >= 720:
+        return f"{h}p"
+    if h == 480 and w <= 854:
+        return "480p"
+    return f"{w}×{h}"
+
+
+def _format_spec(spec: SpecResponse) -> str:
+    """Build a human-readable table from a SpecResponse."""
+    lines = []
+    sep = "─" * 42
+
+    lines.append(f"╭{sep}╮")
+    lines.append(f"│ {'r2d2 Station Spec':^40} │")
+    lines.append(f"├{sep}┤")
+
+    lines.append(f"│ {'Uptime:':<14} {_fmt_duration(spec.uptime_seconds):<24} │")
+    lines.append(f"│ {'Control rate:':<14} {spec.effective_control_rate:.1f} Hz{' ':<19} │")
+
+    lines.append(f"│ {'Cameras:':<40} │")
+    if not spec.cameras:
+        lines.append(f"│   (none){' ':<33} │")
+    else:
+        for cam in spec.cameras:
+            name = cam["name"]
+            cap = _fmt_resolution(cam.get("capture_resolution", [0, 0]))
+            stream = _fmt_resolution(cam.get("stream_resolution", [0, 0]))
+            fps = cam.get("effective_fps", 0.0)
+            sent = cam.get("frames_sent", 0)
+            arrow = "→" if cap != stream else "="
+            cam_line = f"  {name:<15} {cap} {arrow} {stream} @ {fps:.1f} fps"
+            cam_line = cam_line[:38]
+            lines.append(f"│ {cam_line:<40} │")
+            lines.append(f"│   ({sent} frames sent){' ':<21} │")
+
+    if spec.recording is not None:
+        rec = spec.recording
+        lines.append(f"│ {'Recording:':<40} │")
+        lines.append(
+            f"│   {rec['dataset_name']:<19} "
+            f"ep={rec['total_episodes']} fr={rec['total_frames']}"
+            f"{' ':<3} │"
+        )
+    else:
+        lines.append(f"│ {'Recording:':<14} (not recording){' ':<22} │")
+
+    wd_str = f"{spec.watchdog_trigger_count} trigger(s)"
+    lines.append(f"│ {'Watchdog:':<14} {wd_str:<24} │")
+
+    lines.append(f"╰{sep}╯")
+    return "\n".join(lines)
+
 
 # Registry: ``type`` field value → dataclass constructor.
 # Used by ``decode_json_message`` for dispatch.
