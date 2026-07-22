@@ -205,20 +205,15 @@ def _fmt_resolution(res: list[int]) -> str:
 
 
 def _format_spec(spec: SpecResponse) -> str:
-    """Build a human-readable table from a SpecResponse."""
-    lines = []
-    sep = "─" * 42
+    """Build a human-readable summary from a SpecResponse."""
+    lines = ["r2d2 Station Spec", "─" * 18]
 
-    lines.append(f"╭{sep}╮")
-    lines.append(f"│ {'r2d2 Station Spec':^40} │")
-    lines.append(f"├{sep}┤")
+    lines.append(f"  Uptime:        {_fmt_duration(spec.uptime_seconds)}")
+    lines.append(f"  Control rate:  {spec.effective_control_rate:.1f} Hz")
 
-    lines.append(f"│ {'Uptime:':<14} {_fmt_duration(spec.uptime_seconds):<24} │")
-    lines.append(f"│ {'Control rate:':<14} {spec.effective_control_rate:.1f} Hz{' ':<19} │")
-
-    lines.append(f"│ {'Cameras:':<40} │")
+    lines.append(f"  Cameras:")
     if not spec.cameras:
-        lines.append(f"│   (none){' ':<33} │")
+        lines.append("    (none)")
     else:
         for cam in spec.cameras:
             name = cam["name"]
@@ -227,26 +222,23 @@ def _format_spec(spec: SpecResponse) -> str:
             fps = cam.get("effective_fps", 0.0)
             sent = cam.get("frames_sent", 0)
             arrow = "→" if cap != stream else "="
-            cam_line = f"  {name:<15} {cap} {arrow} {stream} @ {fps:.1f} fps"
-            cam_line = cam_line[:38]
-            lines.append(f"│ {cam_line:<40} │")
-            lines.append(f"│   ({sent} frames sent){' ':<21} │")
+            lines.append(
+                f"    {name:<20} {cap} {arrow} {stream}  "
+                f"@ {fps:.1f} fps  ({sent} sent)"
+            )
 
     if spec.recording is not None:
         rec = spec.recording
-        lines.append(f"│ {'Recording:':<40} │")
         lines.append(
-            f"│   {rec['dataset_name']:<19} "
-            f"ep={rec['total_episodes']} fr={rec['total_frames']}"
-            f"{' ':<3} │"
+            f"  Recording:     {rec['dataset_name']}  "
+            f"({rec['total_episodes']} episodes, {rec['total_frames']} frames)"
         )
     else:
-        lines.append(f"│ {'Recording:':<14} (not recording){' ':<22} │")
+        lines.append("  Recording:     (not recording)")
 
-    wd_str = f"{spec.watchdog_trigger_count} trigger(s)"
-    lines.append(f"│ {'Watchdog:':<14} {wd_str:<24} │")
+    wd = spec.watchdog_trigger_count
+    lines.append(f"  Watchdog:      {wd} trigger(s)")
 
-    lines.append(f"╰{sep}╯")
     return "\n".join(lines)
 
 

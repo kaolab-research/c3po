@@ -154,12 +154,12 @@ class TestSpecStr:
         assert "48.7" in output
         assert "1h 1m" in output
         assert "front_rgb" in output
-        assert "720" in output and "480" in output
+        assert "720p" in output and "480p" in output
         assert "28.3" in output
         assert "12345" in output
         assert "session_001" in output
-        assert "5" in output
-        assert "1250" in output
+        assert "5 episodes" in output
+        assert "1250 frames" in output
 
     def test_str_no_cameras(self) -> None:
         spec = SpecResponse(
@@ -170,8 +170,8 @@ class TestSpecStr:
             watchdog_trigger_count=0,
         )
         output = str(spec)
-        assert "(none)" in output.lower()
-        assert "not recording" in output.lower()
+        assert "(none)" in output
+        assert "not recording" in output
 
     def test_str_watchdog_triggers(self) -> None:
         spec = SpecResponse(
@@ -182,5 +182,4 @@ class TestSpecStr:
             watchdog_trigger_count=3,
         )
         output = str(spec)
-        assert "3" in output
-        assert "trigger" in output.lower()
+        assert "3 trigger" in output
