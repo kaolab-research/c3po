@@ -68,12 +68,16 @@ class Recording:
         return self._episode_count
 
     def clear(self) -> None:
-        """Reset ``done`` and ``rerecord`` flags, increment episode counter.
+        """Reset ``done`` and ``rerecord`` flags.
 
+        Increments the episode counter unless the episode was discarded
+        (i.e. ``rerecord`` was ``True`` at the time of clearing).
         ``stop`` is never reset.
         """
+        was_discarded = self._keyboard.rerecord
         self._keyboard.clear()
-        self._episode_count += 1
+        if not was_discarded:
+            self._episode_count += 1
 
     # ------------------------------------------------------------------
     # Context manager

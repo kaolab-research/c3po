@@ -69,13 +69,21 @@ class TestRecording:
         robot.close()
 
     def test_clear_increments_episode_count(self, mock_server) -> None:
-        """Each clear() call should bump the episode counter."""
+        """clear() increments counter for normal episodes, not for discarded."""
         robot = Robot(host="127.0.0.1", port=mock_server.port)
         with Recording(robot, "test_session") as rec:
             assert rec.episode_count == 0
-            rec.clear()
+            rec.clear()  # normal clear → increments
             assert rec.episode_count == 1
-            rec.clear()
+            # Simulate 'r' press (marks for discard)
+            rec._keyboard.simulate_key("r")
+            assert rec.rerecord is True
+            rec.clear()  # discarded → does NOT increment
+            assert rec.episode_count == 1  # still 1
+            # Simulate 'n' press (normal episode complete)
+            rec._keyboard.simulate_key("n")
+            assert rec.rerecord is False
+            rec.clear()  # normal → increments
             assert rec.episode_count == 2
         robot.close()
 
