@@ -139,6 +139,20 @@ class CancelEpisode:
     type: str = field(default="cancel_episode", init=False)
 
 
+@dataclass
+class StatusMessage:
+    """Pushed by r2d2 to notify c3po of lifecycle events.
+
+    Unlike ``Observation`` (which streams at the control rate), this is
+    sent asynchronously — once per event, outside the control cadence.
+    """
+
+    event: str
+    message: str
+    data: dict[str, Any] = field(default_factory=dict)
+    type: str = field(default="status", init=False)
+
+
 # Registry: ``type`` field value → dataclass constructor.
 # Used by ``decode_json_message`` for dispatch.
 _MESSAGE_REGISTRY: dict[str, type] = {
@@ -151,6 +165,7 @@ _MESSAGE_REGISTRY: dict[str, type] = {
     "start_recording": StartRecording,
     "stop_recording": StopRecording,
     "cancel_episode": CancelEpisode,
+    "status": StatusMessage,
 }
 
 
