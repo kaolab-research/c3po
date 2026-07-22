@@ -33,6 +33,7 @@ from c3po._protocol import (
     Observation,
     ResetEpisode,
     StartRecording,
+    StatusMessage,
     StopRecording,
 )
 from c3po._transport._websocket import WebSocketTransport
@@ -81,6 +82,7 @@ class Robot:
         self._closed = False
         self._recording = False
         self._rate = float(rate)
+        self._on_status_callback = None
 
         # -- connect transport --------------------------------------------------
         url = f"ws://{host}:{port}"
@@ -170,6 +172,20 @@ class Robot:
     def joint_names(self) -> dict[str, list[str]]:
         """Mapping from arm key to ordered joint name list."""
         return dict(self._manifest["joint_names"])
+
+    @property
+    def on_status(self):
+        """Callback invoked on StatusMessage from r2d2.
+
+        Set to a callable ``f(event, message, data)`` to receive
+        asynchronous lifecycle events (episode finalized, watchdog
+        triggered, etc.).  Set to ``None`` to disable.
+        """
+        return self._on_status_callback
+
+    @on_status.setter
+    def on_status(self, callback):
+        self._on_status_callback = callback
 
     @property
     def camera_stream_info(self) -> dict[str, dict[str, list[int]]]:
@@ -339,7 +355,8 @@ class Robot:
         self.close()
 
     def __del__(self) -> None:
-        self.close()
+        if hasattr(self, "_closed") and not self._closed:
+            self.close()
 
     # ------------------------------------------------------------------
     # Internal
@@ -358,6 +375,26 @@ class Robot:
                 self._buffer.update(key, np.array(value, dtype=np.float64))
         elif isinstance(msg, BinaryFrame):
             self._buffer.update_from_frame(msg)
+        elif isinstance(msg, StatusMessage):
+            level = (
+                logging.WARNING
+                if msg.event == "watchdog_triggered"
+                else logging.INFO
+            )
+            logger.log(
+                level,
+                "[r2d2] %s: %s %s",
+                msg.event,
+                msg.message,
+                msg.data if msg.data else "",
+            )
+            if self._on_status_callback is not None:
+                try:
+                    self._on_status_callback(msg.event, msg.message, msg.data)
+                except Exception:
+                    logger.warning(
+                        "on_status callback raised an exception", exc_info=True
+                    )
 
     def _validate_action(self, action: dict[str, np.ndarray]) -> None:
         """Check that *action* contains all required keys."""
