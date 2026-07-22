@@ -200,6 +200,7 @@ class KeyboardListener:
                 self._done = True
             elif key == "r":
                 self._rerecord = True
+                self._done = True  # exit the current episode immediately
             # Other keys are intentionally ignored.
 
     def _restore_terminal(self) -> None:

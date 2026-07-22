@@ -43,7 +43,7 @@ class TestKeyboardListenerParser:
         kl = self._make_listener()
         kl.simulate_key("r")
         assert kl.stop is False
-        assert kl.done is False
+        assert kl.done is True   # r also ends the current episode
         assert kl.rerecord is True
 
     def test_uppercase_keys_work(self) -> None:

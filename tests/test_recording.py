@@ -68,6 +68,17 @@ class TestRecording:
             assert rec.episode_count == 0
         robot.close()
 
+    def test_clear_increments_episode_count(self, mock_server) -> None:
+        """Each clear() call should bump the episode counter."""
+        robot = Robot(host="127.0.0.1", port=mock_server.port)
+        with Recording(robot, "test_session") as rec:
+            assert rec.episode_count == 0
+            rec.clear()
+            assert rec.episode_count == 1
+            rec.clear()
+            assert rec.episode_count == 2
+        robot.close()
+
     def test_context_manager_cleanup_on_exception(self, mock_server) -> None:
         """stop_recording should still be sent even if the block raises."""
         robot = Robot(host="127.0.0.1", port=mock_server.port)
