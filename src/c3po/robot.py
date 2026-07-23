@@ -85,6 +85,8 @@ class Robot:
         self._recording = False
         self._rate = float(rate)
         self._on_status_callback = None
+        self._dataset_urls: dict[str, str] = {}  # name -> HTTP URL
+        self._host = host
 
         # -- connect transport --------------------------------------------------
         url = f"ws://{host}:{port}"
@@ -328,6 +330,120 @@ class Robot:
         self._check_connected()
         self._transport.send_json(CancelEpisode())
 
+    def download_dataset(
+        self, name: str, dest: str | Path = ".", *, show_progress: bool = True
+    ) -> Path:
+        """Download a recorded dataset from r2d2's HTTP server.
+
+        Pulls the complete LeRobot dataset tree (``data/``, ``meta/``,
+        ``videos/``) over the point-to-point Ethernet link.  Uses the
+        HTTP URL published by r2d2's ``dataset_ready`` notification.
+
+        Parameters
+        ----------
+        name:
+            Dataset name (same as passed to :meth:`start_recording`).
+        dest:
+            Local directory to save into.  A subdirectory *name* is
+            created inside *dest*.
+        show_progress:
+            If ``True`` (default), log download progress.
+
+        Returns
+        -------
+        Path
+            The local dataset directory (``dest / name``).
+
+        Raises
+        ------
+        ValueError
+            If *name* has no known URL (e.g. not yet recorded or
+            ``dataset_ready`` notification was missed).
+        RuntimeError
+            If the HTTP server is unreachable.
+        """
+        from html.parser import HTMLParser
+        from pathlib import Path
+        from urllib.error import URLError
+        from urllib.request import urlopen, urlretrieve
+
+        # Resolve the dataset URL.
+        url_base = self._dataset_urls.get(name)
+        if url_base is None:
+            # Fallback: construct from host + default HTTP port.
+            url_base = f"http://{self._host}:9091/{name}/"
+        url_base = url_base.rstrip("/") + "/"
+
+        dest_dir = Path(dest) / name
+        dest_dir.mkdir(parents=True, exist_ok=True)
+
+        # -- HTML link extractor -------------------------------------------------
+        class _LinkParser(HTMLParser):
+            def __init__(self) -> None:
+                super().__init__()
+                self.links: list[str] = []
+
+            def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+                if tag == "a":
+                    for attr, val in attrs:
+                        if attr == "href" and val:
+                            self.links.append(val)
+
+        # -- recursive download --------------------------------------------------
+        def _download_tree(remote_dir: str, local_dir: Path, depth: int = 0) -> None:
+            local_dir.mkdir(parents=True, exist_ok=True)
+            try:
+                with urlopen(remote_dir, timeout=10.0) as resp:
+                    html = resp.read().decode("utf-8", errors="replace")
+            except URLError as e:
+                raise RuntimeError(
+                    f"Failed to reach r2d2 HTTP server at {remote_dir}: {e}"
+                )
+
+            parser = _LinkParser()
+            parser.feed(html)
+
+            for link in parser.links:
+                if link.startswith("?") or link == "/" or link.startswith(".."):
+                    continue
+                remote_url = remote_dir.rstrip("/") + "/" + link
+                local_path = local_dir / link.rstrip("/")
+
+                if link.endswith("/"):
+                    # Directory: recurse.
+                    _download_tree(remote_url + "/", local_path, depth + 1)
+                else:
+                    # File: download.
+                    if show_progress:
+                        logger.info("  downloading %s", local_path)
+                    try:
+                        urlretrieve(remote_url, str(local_path))
+                    except Exception as e:
+                        logger.warning("Failed to download %s: %s", remote_url, e)
+
+        logger.info("Downloading dataset '%s' from %s ...", name, url_base)
+        _download_tree(url_base, dest_dir)
+
+        # -- verify --------------------------------------------------------------
+        meta = dest_dir / "meta" / "info.json"
+        if not meta.exists():
+            logger.warning(
+                "Dataset '%s' downloaded but meta/info.json not found — "
+                "directory may be incomplete.",
+                name,
+            )
+        else:
+            total_size = sum(
+                f.stat().st_size for f in dest_dir.rglob("*") if f.is_file()
+            )
+            logger.info(
+                "Dataset '%s' downloaded to %s (%.1f MB)",
+                name,
+                dest_dir,
+                total_size / (1024 * 1024),
+            )
+        return dest_dir
+
     def spec(self) -> SpecResponse:
         """Request live runtime metrics from r2d2.
 
@@ -395,6 +511,11 @@ class Robot:
         elif isinstance(msg, BinaryFrame):
             self._buffer.update_from_frame(msg)
         elif isinstance(msg, StatusMessage):
+            # Capture dataset_ready URLs for later download.
+            if msg.event == "dataset_ready" and "url" in (msg.data or {}):
+                name = msg.data.get("name", "")
+                if name:
+                    self._dataset_urls[name] = msg.data["url"]
             level = (
                 logging.WARNING
                 if msg.event == "watchdog_triggered"
