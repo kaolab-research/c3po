@@ -396,6 +396,13 @@ class Robot:
                 with urlopen(remote_dir, timeout=10.0) as resp:
                     html = resp.read().decode("utf-8", errors="replace")
             except URLError as e:
+                if "Connection refused" in str(e) or "Errno 111" in str(e):
+                    raise RuntimeError(
+                        f"Failed to reach r2d2 HTTP server at {remote_dir}: {e}\n"
+                        "Is port 9091 exposed?  Make sure the Docker container "
+                        "was started with '-p 9091:9091' and has been rebuilt "
+                        "after Phase 12 (dataset forwarding)."
+                    )
                 raise RuntimeError(
                     f"Failed to reach r2d2 HTTP server at {remote_dir}: {e}"
                 )
