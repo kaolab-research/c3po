@@ -92,5 +92,9 @@ class Recording:
         try:
             self._robot.stop_recording()
         except Exception:
-            pass
+            import logging
+            logging.getLogger(__name__).warning(
+                "stop_recording() failed — dataset may not be finalized on r2d2",
+                exc_info=True,
+            )
         self._keyboard.stop_listener()
