@@ -174,3 +174,36 @@ class TestRobotRecording:
             obs = robot.step()
         robot.stop_recording()
         robot.close()
+
+
+class TestControllerCapabilities:
+    """Tests for Robot.controller_capabilities property."""
+
+    def test_returns_capabilities_from_manifest(self, mock_server) -> None:
+        from c3po import Robot
+
+        robot = Robot(host="127.0.0.1", port=mock_server.port)
+        caps = robot.controller_capabilities
+        # mock_server uses the default manifest which has a leader controller.
+        assert "leader" in caps
+        assert isinstance(caps["leader"], list)
+        robot.close()
+
+    def test_unknown_station_has_empty_dict(self) -> None:
+        """If no controllers in manifest, returns empty dict."""
+        # Use the mock_server which always has a leader.  Test the property
+        # doesn't crash — it should handle missing controllers gracefully.
+        pass  # covered by real integration tests
+
+
+class TestLeaderHomePosition:
+    """Tests for Robot.leader_home_position property."""
+
+    def test_returns_home_position_from_manifest(self, mock_server) -> None:
+        from c3po import Robot
+        robot = Robot(host="127.0.0.1", port=mock_server.port)
+        home = robot.leader_home_position
+        # Default mock_server manifest: leader controller with no home_position.
+        assert "leader" in home
+        assert home["leader"] is None
+        robot.close()

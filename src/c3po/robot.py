@@ -210,6 +210,32 @@ class Robot:
             }
         return info
 
+    @property
+    def controller_capabilities(self) -> dict[str, list[str]]:
+        """Mapping from controller name to its capabilities list.
+
+        Capability strings include ``"auto_reset"`` and
+        ``"haptic_feedback"``.  An empty list means a passive,
+        read-only controller.
+        """
+        return {
+            c["name"]: c.get("capabilities", [])
+            for c in self._manifest.get("controllers", [])
+        }
+
+    @property
+    def leader_home_position(self) -> dict[str, list[float] | None]:
+        """Mapping from controller name to its home position.
+
+        Returns ``None`` for controllers without a configured home
+        position.  Only meaningful when ``"auto_reset"`` is in the
+        controller's capabilities.
+        """
+        return {
+            c["name"]: c.get("home_position")
+            for c in self._manifest.get("controllers", [])
+        }
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
