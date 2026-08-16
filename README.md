@@ -40,7 +40,7 @@ with Robot() as robot:
 | `host`    | `str` | `"10.42.0.1"` | r2d2 server address. |
 | `port`    | `int` | `9090`        | WebSocket port.      |
 
-The control rate is determined by r2d2 — no `rate` parameter needed. c3po's `step()` blocks until the next observation arrives, naturally pacing the loop at the station's native rate.
+`rate` optionally requests a control rate (default 50.0 Hz) — r2d2 may cap it at the hardware's maximum. c3po's `step()` blocks until the next observation arrives, naturally pacing the loop at the station's control rate.
 
 **Methods:**
 
@@ -52,7 +52,7 @@ The control rate is determined by r2d2 — no `rate` parameter needed. c3po's `s
 | `start_recording(name: str) -> None`                   | Tells r2d2 to begin recording a LeRobot v3.0 dataset. Episode boundaries are signaled by `reset()` calls.                                                                                                                   |
 | `stop_recording() -> None`                             | Tells r2d2 to finalize and close the current dataset.                                                                                                                                                                       |
 | `cancel_episode() -> None`                             | Tells r2d2 to discard the current in‑progress episode.                                                                                                                                                                      |
-| `recording(name: str) -> RecordingSession`             | Context manager combining `start_recording` / `stop_recording` with built‑in keyboard controls. Returns a `RecordingSession` with `stop`, `done`, and `rerecord` flags. See section 6.                                      |
+| `recording(name: str) -> Recording`             | Context manager combining `start_recording` / `stop_recording` with built‑in keyboard controls. Returns a `Recording` with `stop`, `done`, and `rerecord` flags. See section 6.                                      |
 
 **Properties (populated from the `describe` manifest):**
 
@@ -308,14 +308,17 @@ All exceptions subclass `RuntimeError` and include descriptive messages.
 
 ```
 c3po/src/c3po/
-├── __init__.py           # Exports: Robot, RecordingSession, exceptions
+├── __init__.py           # Exports: Robot, Recording, exceptions
 ├── robot.py              # Public Robot class
 ├── _transport/
 │   ├── __init__.py
+│   ├── _base.py          # Transport ABC
 │   └── _websocket.py     # WebSocket client with JSON text + binary frame support
+├── _protocol.py          # Wire protocol (mirrored in r2d2)
 ├── _manifest.py          # Manifest parsing and observation key derivation
 ├── _buffer.py            # Thread‑safe observation buffer with blocking wait
-├── _keyboard.py          # TerminalKeyListener (pure stdlib on Unix)
+├── _keyboard.py          # KeyboardListener (pure stdlib on Unix)
+├── _recording.py         # Recording context manager
 └── exceptions.py         # Custom exception classes
 ```
 
@@ -334,11 +337,11 @@ c3po/src/c3po/
 
 ### Observation buffer
 
-A thread‑safe latest‑value buffer. The WebSocket thread writes; the user's thread reads. `wait_next()` blocks until new data arrives after the last read — this is what synchronizes c3po's loop to r2d2's control cycle.
+A thread‑safe latest‑value buffer. The WebSocket thread writes; the user's thread reads. `wait_until_any()` blocks until at least one observation key has been updated — this is what synchronizes c3po's loop to r2d2's control cycle.
 
 ### Keyboard listener
 
-A background thread reads raw bytes from the controlling TTY using `termios` + `tty` + `select`. It parses single‑byte keys (q, n, r) and sets flags on a shared `RecordingSession` object. On Windows, where `termios` is unavailable, the listener is a no‑op. No `pynput` dependency.
+A background thread reads raw bytes from the controlling TTY using `termios` + `tty` + `select`. It parses single‑byte keys (q, n, r) and sets flags on a shared `Recording` object. On Windows, where `termios` is unavailable, the listener is a no‑op. No `pynput` dependency.
 
 ---
 
