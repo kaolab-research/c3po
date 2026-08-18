@@ -48,6 +48,11 @@ def parse_manifest(manifest: dict[str, Any]) -> dict[str, Any]:
         prefix = f"{name}/" if name else ""
         key = f"{prefix}{mode}"
         action_keys.append(key)
+        # DROID mode (Phase 19): arms may declare a gripper key that is
+        # commanded alongside the arm action (e.g. follower/gripper_position).
+        gripper = arm.get("gripper")
+        if gripper:
+            action_keys.append(f"{prefix}{gripper.get('key', 'gripper_position')}")
         joint_names[prefix.rstrip("/") or "default"] = list(arm.get("joint_names", []))
 
     return {
@@ -74,6 +79,11 @@ def build_observation_keys(manifest: dict[str, Any]) -> list[str]:
         prefix = f"{name}/" if name else ""
         keys.append(f"{prefix}joint_position")
         keys.append(f"{prefix}joint_velocity")
+        # DROID mode (Phase 19): the gripper position is its own observation
+        # key, declared by the arm's gripper manifest entry.
+        gripper = arm.get("gripper")
+        if gripper:
+            keys.append(f"{prefix}{gripper.get('key', 'gripper_position')}")
 
     for cam in manifest["cameras"]:
         keys.append(cam["name"])

@@ -186,3 +186,55 @@ class TestBuildObservationKeys:
         manifest = parse_manifest(_MANIFEST)
         keys = build_observation_keys(manifest)
         assert "follower/wrist_rgb" in keys
+
+
+# ---------------------------------------------------------------------------
+# DROID mode (Phase 19.3) — gripper action/observation keys
+# ---------------------------------------------------------------------------
+
+_DROID_MANIFEST: dict = {
+    **_MANIFEST,
+    "arms": [
+        {
+            "name": "follower",
+            "joint_count": 7,
+            "joint_names": [f"panda_joint{i}" for i in range(1, 8)],
+            "command_mode": "joint_velocity",
+            "gripper": {"key": "gripper_position"},
+        }
+    ],
+}
+
+
+class TestDroidManifest:
+    def test_gripper_key_appended_to_action_keys(self) -> None:
+        result = parse_manifest(_DROID_MANIFEST)
+        assert result["action_keys"] == [
+            "follower/joint_velocity",
+            "follower/gripper_position",
+        ]
+
+    def test_gripper_key_appended_to_observation_keys(self) -> None:
+        result = parse_manifest(_DROID_MANIFEST)
+        keys = build_observation_keys(result)
+        assert keys[:3] == [
+            "follower/joint_position",
+            "follower/joint_velocity",
+            "follower/gripper_position",
+        ]
+
+    def test_gripper_entry_custom_key_respected(self) -> None:
+        manifest = {
+            **_DROID_MANIFEST,
+            "arms": [{**_DROID_MANIFEST["arms"][0], "gripper": {"key": "gripper_pos"}}],
+        }
+        result = parse_manifest(manifest)
+        assert result["action_keys"] == [
+            "follower/joint_velocity",
+            "follower/gripper_pos",
+        ]
+
+    def test_arm_without_gripper_entry_unchanged(self) -> None:
+        result = parse_manifest(_MANIFEST)
+        assert result["action_keys"] == ["follower/joint_position"]
+        assert "follower/gripper_position" not in build_observation_keys(result)
