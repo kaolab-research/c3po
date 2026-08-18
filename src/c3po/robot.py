@@ -29,6 +29,7 @@ from c3po._protocol import (
     Action,
     BinaryFrame,
     CancelEpisode,
+    DeleteDataset,
     DescribeRequest,
     Observation,
     ResetEpisode,
@@ -356,6 +357,17 @@ class Robot:
         self._check_connected()
         self._transport.send_json(CancelEpisode())
 
+    def delete_dataset(self, name: str) -> None:
+        """Tell r2d2 to delete a finalized dataset from the NUC.
+
+        The NUC is a control node, not storage: forward the dataset with
+        :meth:`download_dataset` first, then free the NUC's disk.  r2d2
+        refuses (``dataset_delete_refused`` status) if the dataset is
+        still being recorded or the name is empty.
+        """
+        self._check_connected()
+        self._transport.send_json(DeleteDataset(name=name))
+
     def download_dataset(
         self, name: str, dest: str | Path = ".", *, show_progress: bool = True
     ) -> Path:
@@ -393,10 +405,19 @@ class Robot:
         from urllib.error import URLError
         from urllib.request import urlopen, urlretrieve
 
-        # Resolve the dataset URL.
-        url_base = self._dataset_urls.get(name)
-        if url_base is None:
-            # Fallback: construct from host + default HTTP port.
+        # Resolve the dataset URL.  The advertised URL carries the correct
+        # *port*, but its host is the station's static IP — which may not
+        # be the address this client actually reached r2d2 on.  Prefer the
+        # client's own host with the advertised port; fall back to the
+        # default HTTP port when no URL was advertised.
+        advertised = self._dataset_urls.get(name)
+        if advertised is not None:
+            from urllib.parse import urlparse
+
+            parts = urlparse(advertised)
+            port = parts.port or 9091
+            url_base = f"http://{self._host}:{port}/{name}/"
+        else:
             url_base = f"http://{self._host}:9091/{name}/"
         url_base = url_base.rstrip("/") + "/"
 

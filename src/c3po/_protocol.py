@@ -140,6 +140,20 @@ class CancelEpisode:
 
 
 @dataclass
+class DeleteDataset:
+    """Sent by c3po to tell r2d2 to delete a finalized dataset.
+
+    The NUC is a control node, not storage: clients forward datasets to
+    their own machines over HTTP and then request cleanup.  r2d2 refuses
+    (with a ``dataset_delete_refused`` status) if the dataset is
+    currently being recorded or the name is empty.
+    """
+
+    name: str
+    type: str = field(default="delete_dataset", init=False)
+
+
+@dataclass
 class StatusMessage:
     """Pushed by r2d2 to notify c3po of lifecycle events.
 
@@ -254,6 +268,7 @@ _MESSAGE_REGISTRY: dict[str, type] = {
     "start_recording": StartRecording,
     "stop_recording": StopRecording,
     "cancel_episode": CancelEpisode,
+    "delete_dataset": DeleteDataset,
     "status": StatusMessage,
     "spec_request": SpecRequest,
     "spec_response": SpecResponse,

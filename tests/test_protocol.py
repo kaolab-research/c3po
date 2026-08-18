@@ -14,6 +14,7 @@ from c3po._protocol import (
     Action,
     BinaryFrame,
     CancelEpisode,
+    DeleteDataset,
     DescribeRequest,
     DescribeResponse,
     Encoding,
@@ -112,6 +113,13 @@ class TestJsonMessages:
         raw = encode_json_message(msg)
         decoded = decode_json_message(raw)
         assert decoded.type == "cancel_episode"
+
+    def test_delete_dataset_roundtrip(self) -> None:
+        msg = DeleteDataset(name="rollout_001")
+        raw = encode_json_message(msg)
+        decoded = decode_json_message(raw)
+        assert decoded.type == "delete_dataset"
+        assert decoded.name == "rollout_001"
 
     def test_unknown_message_type_raises(self) -> None:
         raw = json.dumps({"type": "nonexistent", "foo": "bar"})

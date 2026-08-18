@@ -157,6 +157,19 @@ class TestDownloadDataset:
             assert vid.is_file()
         robot.close()
 
+    def test_download_uses_client_host_not_advertised_host(self) -> None:
+        """The advertised URL's host is the station's static IP — the client
+        must download via the host it actually reached r2d2 on (regression:
+        --record-dest downloads silently following the wrong host)."""
+        robot = Robot(host=self._mock.host, port=self._mock.port)
+        robot._dataset_urls["test_ds"] = (
+            f"http://10.42.0.1:{self._http.port}/test_ds/"  # unreachable host
+        )
+        with tempfile.TemporaryDirectory() as dest:
+            result = robot.download_dataset("test_ds", dest, show_progress=False)
+            assert (result / "meta" / "info.json").is_file()
+        robot.close()
+
     def test_download_parquet_content_matches(self) -> None:
         """Downloaded files should have the same content as the originals."""
         robot = self._make_robot()
