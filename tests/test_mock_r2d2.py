@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 
 import numpy as np
 import pytest
@@ -15,6 +16,7 @@ from c3po._protocol import (
     DescribeRequest,
     Observation,
     StartRecording,
+    StatusMessage,
     StopRecording,
     decode_binary_frame,
     decode_json_message,
@@ -133,7 +135,11 @@ class TestMockR2D2:
             ws.close()
 
     def test_recording_commands_acked(self, mock_server) -> None:
-        """start_recording / stop_recording / cancel_episode must not error."""
+        """start_recording / stop_recording / cancel_episode must not error.
+
+        Mirrors real r2d2: the mock pushes recording_started on start and
+        recording_stopped + dataset_ready on stop (after which observations
+        stop but camera frames keep flowing)."""
         ws = _ws_connect(mock_server.url)
         try:
             ws.send(encode_json_message(DescribeRequest()))
@@ -143,9 +149,16 @@ class TestMockR2D2:
             ws.send(encode_json_message(CancelEpisode()))
             ws.send(encode_json_message(StopRecording()))
 
-            # Still able to receive observations afterwards.
-            obs = _recv_json(ws)
-            assert isinstance(obs, Observation)
+            # Drain (observations may be queued ahead of the statuses).
+            events = []
+            deadline = time.monotonic() + 3.0
+            while time.monotonic() < deadline and len(events) < 3:
+                msg = _recv_json(ws)
+                if isinstance(msg, StatusMessage):
+                    events.append(msg.event)
+            assert "recording_started" in events
+            assert "recording_stopped" in events
+            assert "dataset_ready" in events
         finally:
             ws.close()
 

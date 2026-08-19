@@ -175,6 +175,36 @@ class TestRobotRecording:
         robot.stop_recording()
         robot.close()
 
+    def test_wait_for_status_survives_camera_stream_after_stop(self, mock_server) -> None:
+        """After stop_recording r2d2 stops observations but keeps streaming
+        camera frames — wait_for_status must still return promptly instead
+        of hanging in an observation wait (regression: the rollout client
+        hung forever draining with step(None), 2026-08-19)."""
+        robot = Robot(host="127.0.0.1", port=mock_server.port)
+        try:
+            robot.start_recording("test_session")
+            started = robot.wait_for_status("recording_started", timeout=10.0)
+            assert started is not None
+            assert started.event == "recording_started"
+
+            robot.stop_recording()
+            t0 = time.monotonic()
+            ready = robot.wait_for_status("dataset_ready", timeout=15.0)
+            elapsed = time.monotonic() - t0
+            assert ready is not None
+            assert ready.data.get("name") == "test_session"
+            assert elapsed < 10.0  # must not stall on the camera stream
+        finally:
+            robot.close()
+
+    def test_wait_for_status_timeout_returns_none(self, mock_server) -> None:
+        robot = Robot(host="127.0.0.1", port=mock_server.port)
+        try:
+            msg = robot.wait_for_status("never_happens", timeout=1.0)
+            assert msg is None
+        finally:
+            robot.close()
+
 
 class TestControllerCapabilities:
     """Tests for Robot.controller_capabilities property."""

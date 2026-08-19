@@ -21,12 +21,14 @@ from PIL import Image
 from c3po._protocol import (
     BinaryFrame,
     CancelEpisode,
+    DeleteDataset,
     DescribeRequest,
     DescribeResponse,
     Encoding,
     Observation,
     ResetEpisode,
     StartRecording,
+    StatusMessage,
     StopRecording,
     decode_json_message,
     encode_binary_frame,
@@ -154,10 +156,16 @@ async def _r2d2_handler(
     """Handle a single c3po client connection, speaking the N-Droids protocol."""
     stream_task: asyncio.Task | None = None
     _recording = False
+    _obs_enabled = True  # mirrors real r2d2: observations stop after stop_recording
+    _recording_name = ""
     _last_action: dict | None = None
 
     async def _stream_loop() -> None:
-        """Send observations and binary frames at *control_rate* Hz."""
+        """Send observations and binary frames at *control_rate* Hz.
+
+        Camera frames keep streaming after ``stop_recording`` — real
+        r2d2's camera loop is independent of the control cadence.
+        """
         t = 0.0
         period = 1.0 / control_rate
         camera_names = [c["name"] for c in manifest.get("cameras", [])]
@@ -181,7 +189,8 @@ async def _r2d2_handler(
 
             obs_msg = Observation(data=obs_data)
             try:
-                await websocket.send(encode_json_message(obs_msg))
+                if _obs_enabled:
+                    await websocket.send(encode_json_message(obs_msg))
             except Exception:
                 break
 
@@ -233,8 +242,50 @@ async def _r2d2_handler(
                 pass  # acknowledge silently (episode boundary for recording)
             elif isinstance(msg, StartRecording):
                 _recording = True
+                _recording_name = msg.name
+                await websocket.send(
+                    encode_json_message(
+                        StatusMessage(
+                            event="recording_started",
+                            message=f"Recording {msg.name}",
+                            data={"dataset_name": msg.name},
+                        )
+                    )
+                )
             elif isinstance(msg, StopRecording):
                 _recording = False
+                _obs_enabled = False  # real r2d2 stops observations while finalizing
+                await websocket.send(
+                    encode_json_message(
+                        StatusMessage(
+                            event="recording_stopped",
+                            message=f"Recording {_recording_name} stopped",
+                            data={"dataset_name": _recording_name},
+                        )
+                    )
+                )
+                await websocket.send(
+                    encode_json_message(
+                        StatusMessage(
+                            event="dataset_ready",
+                            message=f"{_recording_name} ready",
+                            data={
+                                "name": _recording_name,
+                                "url": f"http://127.0.0.1:9091/{_recording_name}/",
+                            },
+                        )
+                    )
+                )
+            elif isinstance(msg, DeleteDataset):
+                await websocket.send(
+                    encode_json_message(
+                        StatusMessage(
+                            event="dataset_deleted",
+                            message=f"Dataset {msg.name} deleted",
+                            data={"name": msg.name},
+                        )
+                    )
+                )
             elif isinstance(msg, CancelEpisode):
                 pass  # acknowledge silently
             elif hasattr(msg, "data"):

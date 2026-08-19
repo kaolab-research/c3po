@@ -368,6 +368,48 @@ class Robot:
         self._check_connected()
         self._transport.send_json(DeleteDataset(name=name))
 
+    def wait_for_status(self, event: str, timeout: float = 60.0) -> StatusMessage | None:
+        """Drain incoming messages until a StatusMessage with *event* arrives.
+
+        Unlike :meth:`step` — which only returns on the next Observation —
+        this keeps ingesting while camera frames stream and returns as soon
+        as the status is seen.  Useful after ``stop_recording``, when r2d2
+        stops streaming observations but camera frames (and the async
+        finalization statuses) keep flowing.
+
+        Returns the matching StatusMessage, or ``None`` if *timeout*
+        expires.  Raises :class:`RobotDisconnectedError` if the connection
+        is lost before the status arrives.
+        """
+        self._check_connected()
+        seen: list[StatusMessage | None] = [None]
+
+        def _on_status(evt: str, message: str, data: dict) -> None:
+            if evt == event and seen[0] is None:
+                seen[0] = StatusMessage(
+                    event=evt, message=message, data=dict(data or {})
+                )
+
+        self.on_status = _on_status
+        try:
+            deadline = time.monotonic() + timeout
+            while seen[0] is None and time.monotonic() < deadline:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                try:
+                    msg = self._transport.recv(timeout=min(1.0, remaining))
+                except RobotDisconnectedError:
+                    if seen[0] is not None:
+                        break
+                    if not self._transport.is_connected:
+                        raise  # genuine connection loss
+                    break  # deadline expired while still connected
+                self._ingest(msg)
+            return seen[0]
+        finally:
+            self.on_status = None
+
     def download_dataset(
         self, name: str, dest: str | Path = ".", *, show_progress: bool = True
     ) -> Path:
